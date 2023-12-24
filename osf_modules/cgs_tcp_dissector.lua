@@ -6,14 +6,17 @@
 --
 ----------------------------------------
 
+local osf = require("osf_utils")
 local inspect = require("inspect")
+
+local osf_tcp_dissector = {}
 
 -- Plugin constants/global variables
 CGS_OS_TCP_PROTO = CGS_OS_PROTO .. "-tcp"
 CGS_OS_TCP_STREAM_PREFIX = "osf_tcp_stream_"
 
 -- Fingerprinting protocol for TCP
-local cgs_tcp_proto = Proto(CGS_OS_TCP_PROTO, "OS Fingerprinting through TCP")
+local cgs_tcp_proto = Proto(CGS_OS_TCP_PROTO, "OS Fingerprinting - TCP")
 
 --- Fields for this TCP postdissector ---
 -- TCP/IP adresses and ports (in part to build a lookup table)
@@ -68,12 +71,12 @@ local osf_tcp_device_vendor_F = ProtoField.string(CGS_OS_TCP_PROTO .. ".device_v
 cgs_tcp_proto.fields = {osf_tcp_os_name_F, osf_tcp_os_class_F, osf_tcp_device_name_F, osf_tcp_device_type_F, osf_tcp_device_vendor_F}
 
 -- Preload Satori's TCP signatures
-local osf_tcp_xml = preloadXML(OSF_SATORI_TCP)
+local osf_tcp_xml = osf.preloadXML(OSF_SATORI_TCP)
 
 -- Function that searches for existing address/port pairs
 -- inside our lookup table
 
-function osf_tcp_lookup_search(src_addr, dst_addr, src_tcpport, dst_tcpport)
+function osf_tcp_dissector.osf_tcp_lookup_search(src_addr, dst_addr, src_tcpport, dst_tcpport)
     -- Simple linear search for now --
     for _, stream_data in pairs(cgs_tcp_stream_table) do
         -- Extracting it exactly as we specified earlier
@@ -95,7 +98,7 @@ end
 
 -- Very similar to the previous function except it returns the stream index/key
 -- Mostly for debugging --
-function osf_tcp_lookup_index_search(src_addr, dst_addr, src_tcpport, dst_tcpport)
+function osf_tcp_dissector.osf_tcp_lookup_index_search(src_addr, dst_addr, src_tcpport, dst_tcpport)
     -- Simple linear search for now --
     for stream_index, stream_data in pairs(cgs_tcp_stream_table) do
         -- Extracting it exactly as we specified earlier
@@ -119,7 +122,7 @@ end
 -- based on the captured data (to compare it later against
 -- Satori's TCP fingerprint database):
 
-function osf_build_tcp_signature(packet_data)
+function osf_tcp_dissector.osf_build_tcp_signature(packet_data)
     -- (...)
 
     -- return (current TCP signature with p0f's format regarding TCP options)
@@ -128,14 +131,14 @@ end
 -- Function that tries to find a signature match between
 -- the current frame and all TCP signatures:
 
-function is_osf_tcp_match(cur_packet_data, cur_sig, finger_db)
+function osf_tcp_dissector.is_osf_tcp_match(cur_packet_data, cur_sig, finger_db)
     -- (...)
 
     -- return (composite_sig in finger_db)
 end
 
 -- TCP Fingerprinting postdissector
-function cgs_tcp_proto.dissector(buffer,pinfo,tree)
+function cgs_tcp_proto.dissector(buffer, pinfo, tree)
     -- Due to the info that Satori's own TCP signatures provides us,
     -- we only really ever need to process TCP packets whose SYN flag
     -- is set, which can improve performance as well as avoid overanalyzing
@@ -172,7 +175,7 @@ function cgs_tcp_proto.dissector(buffer,pinfo,tree)
         -- We first create an empty entry in the lookup table
         local cur_stream_id = CGS_OS_TCP_STREAM_PREFIX .. tostring(cgs_tcp_stream_id)
 
-        if not osf_tcp_lookup_search(tostring(ip_src), tostring(ip_dst), tostring(tcp_src), tostring(tcp_dst)) then
+        if not osf_tcp_dissector.osf_tcp_lookup_search(tostring(ip_src), tostring(ip_dst), tostring(tcp_src), tostring(tcp_dst)) then
             cgs_tcp_stream_table[cur_stream_id] = {}
 
             -- Let's put in address and port info
@@ -204,8 +207,8 @@ function cgs_tcp_proto.dissector(buffer,pinfo,tree)
 
         --print("ACK activated")
 
-        local packet_index = osf_tcp_lookup_index_search(tostring(ip_src), tostring(ip_dst), tostring(tcp_src), tostring(tcp_dst))
-        print("[INFO]: Current packet belongs to " .. packet_index)
+        local packet_index = osf_tcp_dissector.osf_tcp_lookup_index_search(tostring(ip_src), tostring(ip_dst), tostring(tcp_src), tostring(tcp_dst))
+        print("[INFO]: Current packet belongs to " .. tostring(packet_index))
 
         -- (...)
     end
@@ -223,6 +226,6 @@ end
 -- We add this "protocol" as a postdissector
 register_postdissector(cgs_tcp_proto)
 
-
+return osf_tcp_dissector
 --local inspect = require("inspect")
 --print(inspect(cgs_tcp_stream_table))

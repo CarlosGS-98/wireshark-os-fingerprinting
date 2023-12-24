@@ -6,8 +6,10 @@
 --
 ----------------------------------------
 
+--package.prepend_path("osf_modules")
+
 -- Plugin utilities
 local osf = require("osf_utils")
 
 -- Plugin sumbodules/dissectors
-local osf_tcp = require("cgs_tcp_proto")
+--local osf_tcp = require("osf_tcp_dissector")
