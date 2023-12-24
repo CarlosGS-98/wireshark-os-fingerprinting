@@ -8,6 +8,7 @@
 
 local osf = require("osf_utils")
 local inspect = require("inspect")
+local md5 = require("md5")
 
 local osf_tcp_dissector = {}
 
@@ -73,51 +74,6 @@ cgs_tcp_proto.fields = {osf_tcp_os_name_F, osf_tcp_os_class_F, osf_tcp_device_na
 -- Preload Satori's TCP signatures
 local osf_tcp_xml = osf.preloadXML(OSF_SATORI_TCP)
 
--- Function that searches for existing address/port pairs
--- inside our lookup table
-
-function osf_tcp_dissector.osf_tcp_lookup_search(src_addr, dst_addr, src_tcpport, dst_tcpport)
-    -- Simple linear search for now --
-    for _, stream_data in pairs(cgs_tcp_stream_table) do
-        -- Extracting it exactly as we specified earlier
-        local src_ip = stream_data["ip_pair"]["src_ip"]
-        local dst_ip = stream_data["ip_pair"]["dst_ip"]
-        local src_port = stream_data["port_pair"]["src_port"]
-        local dst_port = stream_data["port_pair"]["dst_port"]
-
-        if (src_addr == src_ip)
-        and (dst_addr == dst_ip)
-        and (src_port == src_tcpport)
-        and (dst_port == dst_tcpport) then
-            return true
-        end
-    end
-
-    return false
-end
-
--- Very similar to the previous function except it returns the stream index/key
--- Mostly for debugging --
-function osf_tcp_dissector.osf_tcp_lookup_index_search(src_addr, dst_addr, src_tcpport, dst_tcpport)
-    -- Simple linear search for now --
-    for stream_index, stream_data in pairs(cgs_tcp_stream_table) do
-        -- Extracting it exactly as we specified earlier
-        local src_ip = stream_data["ip_pair"]["src_ip"]
-        local dst_ip = stream_data["ip_pair"]["dst_ip"]
-        local src_port = stream_data["port_pair"]["src_port"]
-        local dst_port = stream_data["port_pair"]["dst_port"]
-
-        if (src_addr == src_ip)
-        and (dst_addr == dst_ip)
-        and (src_port == src_tcpport)
-        and (dst_port == dst_tcpport) then
-            return stream_index
-        end
-    end
-
-    return nil
-end
-
 -- Function that allows us to build p0f TCP signatures
 -- based on the captured data (to compare it later against
 -- Satori's TCP fingerprint database):
@@ -160,57 +116,51 @@ function cgs_tcp_proto.dissector(buffer, pinfo, tree)
     local fin_check = osf_tcp_fin()
     local syn_check = osf_tcp_syn()
 
-    -- We store also our dissection tree for TCP
+    -- We also store our dissection tree for TCP
     local tcp_tree = tree:add(cgs_tcp_proto, "OS FIngerprinting through TCP")
 
-    if syn_check ~= nil and syn_check.value then   --- Always checked first for obvious reasons ---
-        -- We're sniffing a new TCP stream (or building its info),
-        -- so we must find the relevant data within Satori's
-        -- TCP fingerprints, which we'll later store, alongside
-        -- TCP/IP addresses and ports, inside a lookup table
-        -- to optimize this function as well as to improve
-        -- performance by not having to search
-        -- exact or partial matches every single time.
+    -- We're sniffing a new TCP stream or building its info,
+    -- so we must find the relevant data within Satori's
+    -- TCP fingerprints, which we'll later store, alongside
+    -- TCP/IP addresses and ports, inside a lookup table
+    -- to optimize this function as well as to improve
+    -- performance by not having to search
+    -- exact or partial matches every single time.
 
-        -- We first create an empty entry in the lookup table
-        local cur_stream_id = CGS_OS_TCP_STREAM_PREFIX .. tostring(cgs_tcp_stream_id)
+    if ip_src ~= nil and ip_dst ~= nil and tcp_src ~= nil and tcp_dst ~= nil then
+        if (syn_check ~= nil and syn_check.value) or (ack_check ~= nil and ack_check.value) then
+            -- We first calculate the stream ID based on the current addresses and ports
+            --print("Current Address:Port pairs: [" .. tostring(ip_src) .. ":" .. tostring(tcp_src) .. "], [" .. tostring(ip_dst) .. ":" .. tostring(tcp_dst) .. "]")
+            local cur_stream_id = md5.sumhexa(tostring(ip_src) .. tostring(tcp_src) .. tostring(ip_dst) .. tostring(tcp_dst)) -- For consistency
+            --print("Does ID = " .. cur_stream_id .. " exist?")
 
-        if not osf_tcp_dissector.osf_tcp_lookup_search(tostring(ip_src), tostring(ip_dst), tostring(tcp_src), tostring(tcp_dst)) then
-            cgs_tcp_stream_table[cur_stream_id] = {}
+            if cgs_tcp_stream_table[cur_stream_id] == nil then
+                -- Build a new entry in the stream table
+                -- with the current address and port info:
 
-            -- Let's put in address and port info
-            cgs_tcp_stream_table[cur_stream_id]["ip_pair"] = {
-                src_ip = tostring(ip_src),
-                dst_ip = tostring(ip_dst)
-            }
+                cgs_tcp_stream_table[cur_stream_id] = {}
+                print("New stream ID detected: " .. cur_stream_id)
 
-            cgs_tcp_stream_table[cur_stream_id]["port_pair"] = {
-                src_port = tostring(tcp_src),
-                dst_port = tostring(tcp_dst)
-            }
+                cgs_tcp_stream_table[cur_stream_id]["ip_pair"] = {
+                    src_ip = tostring(ip_src),
+                    dst_ip = tostring(ip_dst)
+                }
 
-            -- Move to the next available spot
-            cgs_tcp_stream_id = cgs_tcp_stream_id + 1
-            print(inspect(cgs_tcp_stream_table))
-            print("Number of distinct registered stream IDs (directed edges) for this session = " .. tostring(cgs_tcp_stream_id))
+                cgs_tcp_stream_table[cur_stream_id]["port_pair"] = {
+                    src_port = tostring(tcp_src),
+                    dst_port = tostring(tcp_dst)
+                }
+
+                print(inspect(cgs_tcp_stream_table))
+            else
+                -- If we get here, we just assume that
+                -- this packet belongs to a previous stream:
+
+                --- [TODO]: Fetch TCP signature info for the current packet ---
+                local stored_stream_id = md5.sumhexa(tostring(ip_src) .. tostring(tcp_src) .. tostring(ip_dst) .. tostring(tcp_dst))
+                print("[INFO]: Current packet's stream key is " .. tostring(stored_stream_id))
+            end
         end
-
-        -- (...)
-    elseif (ack_check ~= nil and syn_check ~= nil) and (ack_check.value and not syn_check.value) then
-        -- If we get here, we just assume that
-        -- this packet belongs to a previous
-        -- stream. The exact stream this belongs
-        -- to will be deduced both from the info
-        -- contained within this session's
-        -- lookup table and the pairs of TCP/IP
-        -- addresses and ports of the current frame/packet.
-
-        --print("ACK activated")
-
-        local packet_index = osf_tcp_dissector.osf_tcp_lookup_index_search(tostring(ip_src), tostring(ip_dst), tostring(tcp_src), tostring(tcp_dst))
-        print("[INFO]: Current packet belongs to " .. tostring(packet_index))
-
-        -- (...)
     end
 
     -- After all those checks, we finally display
