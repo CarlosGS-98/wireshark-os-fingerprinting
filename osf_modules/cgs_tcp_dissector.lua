@@ -91,23 +91,6 @@ local osf_tcp_xml = osf.preloadXML(OSF_SATORI_TCP)
 -- Satori's TCP fingerprint database):
 
 function osf_tcp_dissector.osf_build_tcp_signature(packet_data)
-    -- (...)
-    --[[
-        packet_data = {
-            window_size = tonumber(tcp_wsize.value),
-            df_bit = ip_df_check.value,
-            --syn_bit = syn_check.value,
-            --ack_bit = ack_check.value,
-            tcp_header_len = tonumber(tcp_hdrlen.value),
-            ip_header_len = tonumber(ip_hdrlen.value),
-            packet_len = tonumber(tcp_len.value),
-            mss = tonumber(tcp_mss.value),
-            ttl = tonumber(ip_ttl.value),
-            window_scale = tonumber(tcp_wscale.value),
-            options = tostring(tcp_options.value)
-        }, (...)
-    ]]--
-
     -- We'll store some of the info contained inside packet_data
     -- inside a new anonymous table so we can later concatenate its contents
     -- (ideally with ":" as the separator).
@@ -118,9 +101,7 @@ function osf_tcp_dissector.osf_build_tcp_signature(packet_data)
 
     -- Temporary table to hold the first part of our signature:
     -- (FORMAT): "window_size:ttl:df_bit:total_header_length"
-
-    print(inspect(packet_data))
-    local final_tcp_sig = ""
+    print("Options table = " .. tostring(packet_data["options"]))
 
     local tcp_sig_first = table.concat({
         tostring(packet_data["window_size"]),
@@ -128,6 +109,8 @@ function osf_tcp_dissector.osf_build_tcp_signature(packet_data)
         tostring(packet_data["df_bit"] and 1 or 0),
         tostring(tonumber(packet_data["ip_header_len"]) + tonumber(packet_data["tcp_header_len"]))
     }, ":")
+
+    print("First part = " .. tcp_sig_first)
 
     -- The second part of our signature will contain
     -- all TCP options that have been specified
@@ -141,7 +124,7 @@ function osf_tcp_dissector.osf_build_tcp_signature(packet_data)
     local tcp_timestamp_reply = nil
 
     -- The options will be a list of comma-separated values
-    if packet_data["options"] ~= nil then
+    if packet_data["options"] ~= "" then
         local option_index = 0
 
         -- Guaranteed single-pass traversal of the TCP options array
@@ -152,11 +135,8 @@ function osf_tcp_dissector.osf_build_tcp_signature(packet_data)
                 tcp_sig_second = tcp_sig_second .. ","
             end
 
-            print("Current byte = " .. tostring(packet_data["options"]:get_index(option_index)))
-
             -- The current byte will be, in this case, our TCP kind
             local cur_tcp_kind = tonumber(packet_data["options"]:get_index(option_index))
-            print("TCP Kind = " .. tostring(cur_tcp_kind))
 
             if cur_tcp_kind == 0 then               -- End
                 tcp_sig_second = tcp_sig_second .. "E"
@@ -165,12 +145,11 @@ function osf_tcp_dissector.osf_build_tcp_signature(packet_data)
                 tcp_sig_second = tcp_sig_second .. "N"
                 option_index = option_index + 1
             elseif cur_tcp_kind == 2 then           -- MSS
-                -- We already have this, so we concatenate it directly --
-                tcp_sig_second = tcp_sig_second .. "M" .. tostring(packet_data["mss"])
+                tcp_sig_second = tcp_sig_second .. "M" .. tostring(tonumber(packet_data["options"]:uint(option_index + 2, 2)))
                 option_index = option_index + 4
             elseif cur_tcp_kind == 3 then           -- Window Scale
                 -- We already have this, so we concatenate it directly
-                tcp_sig_second = tcp_sig_second .. "W" .. tostring(packet_data["window_scale"])
+                tcp_sig_second = tcp_sig_second .. "W" .. tostring(tonumber(packet_data["options"]:uint(option_index + 2, 1)))
                 option_index = option_index + 3
             elseif cur_tcp_kind == 4 then           -- SACK Permitted
                 tcp_sig_second = tcp_sig_second .. "S"
@@ -204,17 +183,14 @@ function osf_tcp_dissector.osf_build_tcp_signature(packet_data)
                 tcp_sig_second = tcp_sig_second .. "U"
                 option_index = option_index + 1
             end
-
-            print("Options = \"" .. tcp_sig_second .. "\"")
-            print("Out of bounds?: " .. tostring(option_index >= packet_data["options"]:len()))
-            print("Option Index = " .. tostring(option_index) .. "; Options Length = " .. tostring(packet_data["options"]:len()))
         until option_index >= packet_data["options"]:len()
 
         tcp_sig_second = tcp_sig_second .. ":"
-        print("Current TCP Signature (with options) = \"" .. tostring(tcp_sig_first) .. tostring(tcp_sig_second) .. "\"")
 	else
-        tcp_sig_first = tcp_sig_first .. "*:"    -- "*" as a wildcard for searching later inside the fingerprint database
+        tcp_sig_second = ":*:"    -- "*" as a wildcard for searching later inside the fingerprint database
     end
+
+    print("Second part = " .. tcp_sig_first .. tcp_sig_second)
 
     -- The third and last part of our signature
     -- will consist of quirks that the current packet
@@ -223,44 +199,58 @@ function osf_tcp_dissector.osf_build_tcp_signature(packet_data)
     local tcp_sig_third = ""
 
     -- Heavily based off https://github.com/xnih/satori/blob/master/satoriTCP.py --
-    if (packet_data["options"] ~= nil) and (tonumber(packet_data["options"]:get_index(packet_data["options"]:len() - 1)) == 0) then
+    if (packet_data["options"] ~= "") and (tonumber(packet_data["options"]:get_index(packet_data["options"]:len() - 1)) == 0) then
         tcp_sig_third = tcp_sig_third .. "P"
     end
+    print("P-Check tested")
 
     if packet_data["ip_id"] == 0 then
         tcp_sig_third = tcp_sig_third .. "Z"
     end
+    print("Z-Check tested")
 
     if packet_data["ip_header_len"] > 20 then
         tcp_sig_third = tcp_sig_third .. "I"
     end
+    print("I-Check tested")
 
     if (packet_data["ip_length"] - packet_data["ip_header_len"] - packet_data["tcp_header_len"]) ~= 0 then
         tcp_sig_third = tcp_sig_third .. "D"
     end
+    print("D-Check tested")
 
     if packet_data["urg_bit"] then
         tcp_sig_third = tcp_sig_third .. "U"
     end
+    print("U-Check tested")
 
     if (packet_data["syn_check"] or (packet_data["syn_check"] and packet_data["ack_check"])) and (packet_data["ack_num"] ~= 0) then
         tcp_sig_third = tcp_sig_third .. "A"
     end
+    print("A-Check tested")
 
-    local timestamp_delta = tcp_timestamp_reply - tcp_timestamp_echo
+    if tcp_timestamp_reply ~= nil and tcp_timestamp_echo ~= nil then
+        local timestamp_delta = tcp_timestamp_reply - tcp_timestamp_echo
 
-    if (packet_data["syn_flag"] and timestamp_delta ~= 0) or (packet_data["syn_flag"] and packet_data["ack_flag"] and tcp_timestamp_echo ~= nil and tcp_timestamp_reply ~= nil) then
-        tcp_sig_third = tcp_sig_third .. "T"
+        if (packet_data["syn_flag"] and timestamp_delta ~= 0) or (packet_data["syn_flag"] and packet_data["ack_flag"] and tcp_timestamp_echo ~= nil and tcp_timestamp_reply ~= nil) then
+            tcp_sig_third = tcp_sig_third .. "T"
+        end
     end
+   
+    print("T-Check tested")
 
     -- Lua doesn't support bitwise operators until Lua 5.3
     if (bit32.band(packet_data["flag_array"], 0xFFED)) ~= 0 then  -- SYN+ACK = 0x12 = 18
         tcp_sig_third = tcp_sig_third .. "F"
     end
+    print("F-Check tested")
 
     if tcp_sig_third == "" then
         tcp_sig_third = "."
     end
+    print(".-Check tested")
+
+    print("Third part = " .. tcp_sig_first .. tcp_sig_second .. tcp_sig_third)
 
     return tcp_sig_first .. tcp_sig_second .. tcp_sig_third
 end
@@ -305,7 +295,14 @@ function cgs_tcp_proto.dissector(buffer, pinfo, tree)
     local ip_df_check = osf_ip_df()
     local tcp_len = osf_tcp_len()
     local tcp_mss = osf_tcp_mss()
+    if tcp_mss == nil then
+        tcp_mss = "*"
+    end
+
     local tcp_wscale = osf_tcp_wscale()
+    if tcp_wscale == nil then
+        tcp_wscale = "*"
+    end
 
     local ip_hdrlen = osf_ip_header_len()
     local ip_id = osf_ip_id()
@@ -314,6 +311,12 @@ function cgs_tcp_proto.dissector(buffer, pinfo, tree)
 
     local tcp_flags = osf_tcp_flags()
     local tcp_options = osf_tcp_options()
+    local tcp_opt_array = ""
+    if tcp_options ~= nil then
+        tcp_opt_array = tcp_options()
+    end
+
+    print("Options array: " .. tostring(tcp_opt_array))
 
     -- We also store our dissection tree for TCP
     local tcp_tree = tree:add(cgs_tcp_proto, "OS FIngerprinting through TCP")
@@ -329,11 +332,7 @@ function cgs_tcp_proto.dissector(buffer, pinfo, tree)
     if ip_src ~= nil and ip_dst ~= nil and tcp_src ~= nil and tcp_dst ~= nil then
         if (syn_check ~= nil and syn_check.value) or (ack_check ~= nil and ack_check.value) then
             -- We first calculate the stream ID based on the current addresses and ports
-            --print("Current Address:Port pairs: [" .. tostring(ip_src) .. ":" .. tostring(tcp_src) .. "], [" .. tostring(ip_dst) .. ":" .. tostring(tcp_dst) .. "]")
             local cur_stream_id = md5.sumhexa(tostring(ip_src) .. tostring(tcp_src) .. tostring(ip_dst) .. tostring(tcp_dst)) -- For consistency
-            --print("Does ID = " .. cur_stream_id .. " exist?")
-            print("TCP Options = " .. tostring(inspect(tcp_options)))
-
             local temp_tcp_sig = {}
 
             if cgs_tcp_stream_table[cur_stream_id] == nil then
@@ -353,43 +352,39 @@ function cgs_tcp_proto.dissector(buffer, pinfo, tree)
                     dst_port = tostring(tcp_dst)
                 }
 
+                print(inspect(cgs_tcp_stream_table[cur_stream_id]))
+
                 -- After that, the next step is to build
                 -- our signature (in p0f format) and compare it
                 -- against the entries we have inside Satori's
                 -- fingerprint database:
 
+                -- Signature build
                 print("WSIZE: " .. tostring(tcp_wsize) .. "; MSS: " .. tostring(tcp_mss) .. "; TTL: " .. tostring(ip_ttl) .. "; WSCALE: " .. tostring(tcp_wscale))
 
-                -- Signature build
                 temp_tcp_sig = {
                     window_size = tonumber(tcp_wsize.value),
                     df_bit = ip_df_check.value,
-                    syn_bit = syn_check.value,
-                    ack_bit = ack_check.value,
+                    syn_bit = syn_check.value or false,
+                    ack_bit = ack_check.value or false,
                     ack_num = ack_num.value,
-                    urg_bit = urg_check.value,
+                    urg_bit = urg_check.value or false,
                     flag_array = tonumber(tcp_flags.value),
                     tcp_header_len = tonumber(tcp_hdrlen.value),
                     ip_header_len = tonumber(ip_hdrlen.value),
                     ip_id = tonumber(ip_id.value),
                     ip_length = tonumber(ip_len.value),
                     packet_len = tonumber(tcp_len.value),
-                    mss = tonumber(tcp_mss.value),
+                    mss = tonumber(tcp_mss.value) or "*",
                     ttl = tonumber(ip_ttl.value),
-                    window_scale = tonumber(tcp_wscale.value),   -- In principle we'll only consider the exponent, not the scale itself
-                    options = tcp_options()
+                    window_scale = tonumber(tcp_wscale.value) or "*",   -- In principle we'll only consider the exponent, not the scale itself
+                    options = tcp_opt_array
                     -- Other options will be added later if they exist in the current packet
                 }
 
-                print("Current Partial TCP Signature = " .. inspect(temp_tcp_sig))
-
+                print("Der Tafel wurde richtig konstruiert!")
                 local str_sig = osf_tcp_dissector.osf_build_tcp_signature(temp_tcp_sig) -- p0fv2 format, as in Satori
                 print("Current TCP Signature = \"" .. str_sig .. "\"")
-
-                -- (...)
-
-                --- For debug purposes only ---
-                print(inspect(cgs_tcp_stream_table))
             else
                 -- If we get here, we just assume that
                 -- this packet belongs to a previous stream:
