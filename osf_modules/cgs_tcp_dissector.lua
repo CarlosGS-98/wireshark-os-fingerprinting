@@ -52,7 +52,7 @@ local osf_ip_id = Field.new("ip.id")
 local osf_ip_length = Field.new("ip.len")
 local osf_tcp_header_len = Field.new("tcp.hdr_len")
 
--- Extra field to store a TCP stream lookup table
+-- Extra field for storing a TCP stream lookup table
 local cgs_tcp_stream_table = {
     --[[
         Each entry in this table will have the following format:
@@ -351,26 +351,62 @@ function osf_tcp_dissector.osf_tcp_match(cur_packet_data, finger_db)
     end
 
     -- Traverse the right fingerprint list
-    for _, elem in ipairs(tcp_lookup_db) do
-        for _, test_record in ipairs(elem["tests"]) do
-            if elem["info"]["name"] == "EndeavourOS" then
-                --print(test_record["_attr"]["tcpsig"])
-                print(inspect(elem))
-            end
-            
-            --[[if test_record["_attr"]["tcpsig"] == cur_packet_data["tcp_signature"]
-            )then
-                print("Test record's TCP signature = " .. tostring(test_record["_attr"]["tcpsig"]))
-            end]]
 
-            --print("(" .. tostring(test_record["_attr"]["tcpsig"] == cur_packet_data["tcp_signature"]) .. ", " .. tostring(test_record["_attr"]["tcpflag"] == tcp_flag_filter) .. ")")
+    -- As with NetworkMiner, if we don't get a match right away,
+    -- we can round the TTL up to the next highest power of 2
+    -- and then try to do another fingerprint lookup.
+    --
+    -- With all that said, if we still can't find a match,
+    -- we call it quits and, thus, we just return nil.
 
-            if tostring(test_record["_attr"]["tcpsig"]) == cur_packet_data["tcp_signature"]
-            and tostring(test_record["_attr"]["tcpflag"]) == tcp_flag_filter then
-                return elem["info"]
+    local ttl_round_check = true
+    local new_tcp_sig = ""
+
+    repeat
+        for _, elem in ipairs(tcp_lookup_db) do
+            for _, test_record in ipairs(elem["tests"]) do
+                if elem["info"]["name"] == "EndeavourOS" then
+                    --print(test_record["_attr"]["tcpsig"])
+                    print(inspect(elem))
+                end
+                
+                --[[if test_record["_attr"]["tcpsig"] == cur_packet_data["tcp_signature"]
+                )then
+                    print("Test record's TCP signature = " .. tostring(test_record["_attr"]["tcpsig"]))
+                end]]
+    
+                --print("(" .. tostring(test_record["_attr"]["tcpsig"] == cur_packet_data["tcp_signature"]) .. ", " .. tostring(test_record["_attr"]["tcpflag"] == tcp_flag_filter) .. ")")
+    
+                if tostring(test_record["_attr"]["tcpsig"]) == cur_packet_data["tcp_signature"]
+                and tostring(test_record["_attr"]["tcpflag"]) == tcp_flag_filter then
+                    return elem["info"]
+                end
             end
         end
-    end
+
+        -- If we get here, we assume that we have to round up the current TTL value
+        local new_ttl = cur_packet_data["ttl"]
+
+        -- The following snippet works exactly the same in NetworkMiner
+        -- (and it's, in fact, derived from the former):
+
+        if new_ttl > 128 then
+            new_ttl = 255
+        elseif new_ttl > 64 then
+            new_ttl = 128
+        elseif new_ttl > 32 then
+            new_ttl = 64
+        else
+            new_ttl = 32
+        end
+
+        -- Rewrite the current signature string
+        cur_packet_data["ttl"] = new_ttl
+        new_tcp_sig = osf_tcp_dissector.osf_build_tcp_signature(cur_packet_data)
+        cur_packet_data["tcp_signature"] = new_tcp_sig
+
+        ttl_round_check = false
+    until ttl_round_check == false
 
     return nil
 end
@@ -429,10 +465,6 @@ function cgs_tcp_proto.dissector(buffer, pinfo, tree)
 
     --print("Options array: " .. tostring(tcp_opt_array))
 
-    -- We also store our dissection tree for TCP
-    local tcp_tree = tree:add(cgs_tcp_proto, "OS FIngerprinting through TCP")
-    local tcp_os_data = nil
-
     -- We're sniffing a new TCP stream or building its info,
     -- so we must find the relevant data within Satori's
     -- TCP fingerprints, which we'll later store, alongside
@@ -442,6 +474,10 @@ function cgs_tcp_proto.dissector(buffer, pinfo, tree)
     -- exact or partial matches every single time.
 
     if ip_src ~= nil and ip_dst ~= nil and tcp_src ~= nil and tcp_dst ~= nil then
+        -- We also store our dissection tree for TCP
+        local tcp_tree = tree:add(cgs_tcp_proto, "OS Fingerprinting through TCP")
+        local tcp_os_data = nil
+
         if (syn_check ~= nil and syn_check.value) or (ack_check ~= nil and ack_check.value) then
             -- We first calculate the stream ID based on the current addresses and ports
             local cur_stream_id = md5.sumhexa(tostring(ip_src) .. tostring(ip_dst)) --.. tostring(tcp_src) .. tostring(tcp_dst)) -- For consistency
@@ -452,7 +488,7 @@ function cgs_tcp_proto.dissector(buffer, pinfo, tree)
                 -- with the current address and port info:
 
                 cgs_tcp_stream_table[cur_stream_id] = {}
-                print("New stream ID detected: " .. cur_stream_id)
+                print("New TCP stream ID detected: " .. cur_stream_id)
 
                 cgs_tcp_stream_table[cur_stream_id]["ip_pair"] = {
                     src_ip = tostring(ip_src),
@@ -529,7 +565,6 @@ function cgs_tcp_proto.dissector(buffer, pinfo, tree)
                 --print("[INFO]: Current packet's stream key is " .. tostring(stored_stream_id))
             end
         end
-    end
 
     -- After all those checks, we finally display
     -- all the relevant info from our current packet:
@@ -574,10 +609,14 @@ function cgs_tcp_proto.dissector(buffer, pinfo, tree)
     tcp_tree:add(osf_tcp_os_vendor_F, packet_os_vendor)
     tcp_tree:add(osf_tcp_device_type_F, packet_device_type)
     tcp_tree:add(osf_tcp_device_vendor_F, packet_device_vendor)
+    end
 end
 
 -- We add this "protocol" as a postdissector
 register_postdissector(cgs_tcp_proto)
+
+--local tcp_port_table = DissectorTable.get("tcp.port")
+--tcp_port_table:add("0-65535", cgs_tcp_proto)
 
 return osf_tcp_dissector
 --local inspect = require("inspect")
