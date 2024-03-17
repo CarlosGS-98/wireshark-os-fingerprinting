@@ -566,49 +566,49 @@ function cgs_tcp_proto.dissector(buffer, pinfo, tree)
             end
         end
 
-    -- After all those checks, we finally display
-    -- all the relevant info from our current packet:
-    local packet_full_name = "Unknown"
-    local packet_os_name = "Unknown"
-    local packet_os_class = "Unknown"
-    local packet_os_vendor = "Unknown"
-    local packet_device_type = "Unknown"
-    local packet_device_vendor = "Unknown"
+        -- After all those checks, we finally display
+        -- all the relevant info from our current packet:
+        local packet_full_name = "Unknown"
+        local packet_os_name = "Unknown"
+        local packet_os_class = "Unknown"
+        local packet_os_vendor = "Unknown"
+        local packet_device_type = "Unknown"
+        local packet_device_vendor = "Unknown"
 
-    --print("Current OS Data = " .. inspect(tcp_os_data))
+        --print("Current OS Data = " .. inspect(tcp_os_data))
 
-    if (tcp_os_data ~= nil and tostring(tcp_os_data["name"]) ~= "") then
-        packet_full_name = tcp_os_data["name"]
-    end
+        if (tcp_os_data ~= nil and tostring(tcp_os_data["name"]) ~= "") then
+            packet_full_name = tcp_os_data["name"]
+        end
 
-    if (tcp_os_data ~= nil and tostring(tcp_os_data["os_name"]) ~= "") then
-        packet_os_name = tcp_os_data["os_name"]
-    end
+        if (tcp_os_data ~= nil and tostring(tcp_os_data["os_name"]) ~= "") then
+            packet_os_name = tcp_os_data["os_name"]
+        end
 
-    if (tcp_os_data ~= nil and tostring(tcp_os_data["os_class"]) ~= "") then
-        packet_os_class = tcp_os_data["os_class"]
-    end
+        if (tcp_os_data ~= nil and tostring(tcp_os_data["os_class"]) ~= "") then
+            packet_os_class = tcp_os_data["os_class"]
+        end
 
-    if (tcp_os_data ~= nil and tostring(tcp_os_data["os_vendor"]) ~= "") then
-        packet_os_vendor = tcp_os_data["os_vendor"]
-    end
+        if (tcp_os_data ~= nil and tostring(tcp_os_data["os_vendor"]) ~= "") then
+            packet_os_vendor = tcp_os_data["os_vendor"]
+        end
 
-    if (tcp_os_data ~= nil and tostring(tcp_os_data["device_type"]) ~= "") then
-        packet_device_type = tcp_os_data["device_type"]
-    end
+        if (tcp_os_data ~= nil and tostring(tcp_os_data["device_type"]) ~= "") then
+            packet_device_type = tcp_os_data["device_type"]
+        end
 
-    if (tcp_os_data ~= nil and tostring(tcp_os_data["device_vendor"]) ~= "") then
-        packet_device_vendor = tcp_os_data["device_vendor"]
-    end
+        if (tcp_os_data ~= nil and tostring(tcp_os_data["device_vendor"]) ~= "") then
+            packet_device_vendor = tcp_os_data["device_vendor"]
+        end
 
-    --print("Current Info: (" .. packet_full_name .. " (" .. packet_os_name .. "), " .. packet_os_class .. "; " .. packet_os_vendor .. "; " .. packet_device_type .. " (by " .. packet_device_vendor .. "))")
+        --print("Current Info: (" .. packet_full_name .. " (" .. packet_os_name .. "), " .. packet_os_class .. "; " .. packet_os_vendor .. "; " .. packet_device_type .. " (by " .. packet_device_vendor .. "))")
 
-    tcp_tree:add(osf_tcp_full_name_F, packet_full_name)
-    tcp_tree:add(osf_tcp_os_name_F, packet_os_name)
-    tcp_tree:add(osf_tcp_os_class_F, packet_os_class)
-    tcp_tree:add(osf_tcp_os_vendor_F, packet_os_vendor)
-    tcp_tree:add(osf_tcp_device_type_F, packet_device_type)
-    tcp_tree:add(osf_tcp_device_vendor_F, packet_device_vendor)
+        tcp_tree:add(osf_tcp_full_name_F, packet_full_name)
+        tcp_tree:add(osf_tcp_os_name_F, packet_os_name)
+        tcp_tree:add(osf_tcp_os_class_F, packet_os_class)
+        tcp_tree:add(osf_tcp_os_vendor_F, packet_os_vendor)
+        tcp_tree:add(osf_tcp_device_type_F, packet_device_type)
+        tcp_tree:add(osf_tcp_device_vendor_F, packet_device_vendor)
     end
 end
 

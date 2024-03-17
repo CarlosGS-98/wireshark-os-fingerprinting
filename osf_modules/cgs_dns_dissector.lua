@@ -2,7 +2,7 @@
 -- script-name: cgs_dns_dissector.lua
 --
 -- author: Carlos González Sanz <cgonzalezsanz98@gmail.com>
--- Copyleft (ɔ) 2023, Carlos González Sanz
+-- Copyleft (ɔ) 2023 - 2024, Carlos González Sanz
 --
 ----------------------------------------
 
@@ -33,6 +33,9 @@ local osf_dns_os_vendor_F = ProtoField.string(CGS_OS_DNS_PROTO .. ".os_vendor", 
 local osf_dns_device_type_F = ProtoField.string(CGS_OS_DNS_PROTO .. ".device_type", "Device Type", "Device type/class")                     -- "device_type"
 local osf_dns_device_vendor_F = ProtoField.string(CGS_OS_DNS_PROTO .. ".device_vendor", "Device Vendor")
 local osf_dns_record_tree_F = ProtoField.string(CGS_OS_DNS_PROTO .. ".record", "Current Match")
+
+-- Add fields to the pseudo-protocol
+cgs_dns_proto.fields = {osf_dns_full_name_F, osf_dns_os_name_F, osf_dns_os_class_F, osf_dns_os_vendor_F, osf_dns_device_type_F, osf_dns_device_vendor_F, osf_dns_record_tree_F}
 
 -- Base TCP/IP adresses and ports (in part to build a lookup table)
 local osf_ip_src = Field.new("ip.src")
@@ -120,6 +123,8 @@ local function osf_dns_signature_partition(finger_db)
 end
 
 local osf_dns_exact_list, osf_dns_partial_list = osf_dns_signature_partition(osf_dns_xml)
+--print("Current exact matches list: " .. tostring(inspect(osf_dns_exact_list)))
+print("Current partial matches list: " .. tostring(inspect(osf_dns_partial_list)))
 
 function osf_dns_dissector.osf_dns_match(cur_packet_data, finger_db)
     -- Get both the query and response domain names
@@ -137,13 +142,34 @@ function osf_dns_dissector.osf_dns_match(cur_packet_data, finger_db)
     -- we retrieve from that list.
 
     local total_record_weight = 0
+    local total_matches = 0
+    local record_flag = false
 
     -- DNS exact list traversal
     for _, elem in ipairs(osf_dns_exact_list) do
+        
         for _, test_record in ipairs(elem["tests"]) do
-            if tostring(test_record["_attr"]["dns"]) == cur_packet_data["response_name"] then
+            record_flag = true
+
+            if tostring(test_record["_attr"]["dns"]) == tostring(cur_packet_data["response_name"]) then
+                elem["info"]["weight"] = tonumber(test_record["_attr"]["weight"])
                 table.insert(dns_response_names, elem["info"])
-                return dns_response_names   -- Since it's an exact match
+                total_record_weight = total_record_weight + tonumber(elem["tests"]["_attr"]["weight"])
+                return {dns_response_names[1], total_record_weight, 1}   -- Since it's an exact match
+            end
+        end
+
+        if not record_flag then
+            -- We have to use this as a fallback
+            -- until we discover why our previous
+            -- iterator gives up when the current
+            -- record only contains a single test:
+
+            if tostring(elem["tests"]["_attr"]["dns"]) == tostring(cur_packet_data["response_name"]) then
+                elem["info"]["weight"] = tonumber(elem["tests"]["_attr"]["weight"])
+                table.insert(dns_response_names, elem["info"])
+                total_record_weight = total_record_weight + tonumber(elem["tests"]["_attr"]["weight"])
+                return {dns_response_names[1], total_record_weight, 1}   -- Since it's an exact match
             end
         end
     end
@@ -152,15 +178,20 @@ function osf_dns_dissector.osf_dns_match(cur_packet_data, finger_db)
 
     -- DNS partial list traversal (if we need to)
     for _, elem in ipairs(osf_dns_partial_list) do
-        local record_flag = false
         --print("Record flag = " .. tostring(record_flag))
         --print("Current partial element = " .. tostring(inspect(elem)))
         for _, test_record in ipairs(elem["tests"]) do
             record_flag = true
-            if string.match(tostring(test_record["_attr"]["dns"]), cur_packet_data["response_name"]) ~= nil then
+            print(test_record["_attr"]["dns"])
+            print(tostring(test_record["_attr"]["dns"]) .. " (VS) " .. tostring(cur_packet_data["response_name"]))
+            print(tostring(string.match(tostring(test_record["_attr"]["dns"]), tostring(cur_packet_data["response_name"])) ~= nil))
+
+            if string.match(tostring(test_record["_attr"]["dns"]), tostring(cur_packet_data["response_name"])) ~= nil then
             --if tostring(test_record["_attr"]["dns"]) == cur_packet_data["response_name"] then
+                elem["info"]["weight"] = tonumber(test_record["_attr"]["weight"])
                 table.insert(dns_response_names, elem["info"])
-                total_record_weight = total_record_weight + test_record["_attr"]["weight"]
+                total_record_weight = total_record_weight + tonumber(test_record["_attr"]["weight"])
+                total_matches = total_matches + 1
             end
         end
 
@@ -172,8 +203,10 @@ function osf_dns_dissector.osf_dns_match(cur_packet_data, finger_db)
             -- record only contains a single test:
 
             if string.match(tostring(elem["tests"]["_attr"]["dns"]), cur_packet_data["response_name"]) ~= nil then
+                elem["info"]["weight"] = tonumber(elem["tests"]["_attr"]["weight"])
                 table.insert(dns_response_names, elem["info"])
                 total_record_weight = total_record_weight + tonumber(elem["tests"]["_attr"]["weight"])
+                total_matches = total_matches + 1
             end
         end
     end
@@ -181,7 +214,13 @@ function osf_dns_dissector.osf_dns_match(cur_packet_data, finger_db)
     print("Responses (After partial matches) = " .. tostring(inspect(dns_response_names)))
 
     if total_record_weight > 0 then
-        return {dns_response_names, total_record_weight}
+        table.sort(dns_response_names, function(r1, r2)
+            return r1["weight"] > r2["weight"]
+        end)
+
+        print(inspect(dns_response_names))
+
+        return {dns_response_names[1], total_record_weight, total_matches}
     else
         return {}
     end
@@ -259,14 +298,14 @@ function cgs_dns_proto.dissector(buffer, pinfo, tree)
 
             -- Let's check what we got back
             dns_os_data = osf_dns_dissector.osf_dns_match(temp_dns_sig, osf_dns_xml)
-            print("Do we have DNS data?: " .. tostring(next(dns_os_data) ~= nil))
-            if next(dns_os_data) ~= nil then
+            print("Do we have DNS data?: " .. tostring(dns_os_data[1] ~= nil))
+            if dns_os_data[1] ~= nil then
                 -- Store the result in the current stream record
                 cgs_dns_stream_table[cur_stream_id]["os_data"] = dns_os_data
                 print(inspect(cgs_dns_stream_table[cur_stream_id]["os_data"]))
             end
             -- (...)
-        --else
+        else
             -- If we get here, we just assume that
             -- this packet belongs to a previous stream:
 
@@ -281,55 +320,65 @@ function cgs_dns_proto.dissector(buffer, pinfo, tree)
 
         -- After all those checks, we finally display
         -- all the relevant info from our current packet:
-        if next(dns_os_data) ~= nil then
-            for index, record in ipairs(dns_os_data[0]) do
-                local packet_full_name = "Unknown"
-                local packet_os_name = "Unknown"
-                local packet_os_class = "Unknown"
-                local packet_os_vendor = "Unknown"
-                local packet_device_type = "Unknown"
-                local packet_device_vendor = "Unknown"
 
-                if (record ~= nil and tostring(record["_attr"]["name"]) ~= "") then
-                    packet_full_name = record["_attr"]["name"]
-                end
+        local dns_subtree = dns_tree:add(
+            "Best of " .. tostring(dns_os_data[3]) .. " matches" .. " (" .. string.format("%.2f", tostring((tonumber(dns_os_data[1]["weight"]) / tonumber(dns_os_data[2])) * 100)) .. " %)"
+        )
 
-                if (record ~= nil and tostring(record["_attr"]["os_name"]) ~= "") then
-                    packet_os_name = record["_attr"]["os_name"]
-                end
+        local packet_full_name = "Unknown"
+        local packet_os_name = "Unknown"
+        local packet_os_class = "Unknown"
+        local packet_os_vendor = "Unknown"
+        local packet_device_type = "Unknown"
+        local packet_device_vendor = "Unknown"
 
-                if (record ~= nil and tostring(record["_attr"]["os_class"]) ~= "") then
-                    packet_os_class = record["_attr"]["os_class"]
-                end
-
-                if (record ~= nil and tostring(record["_attr"]["os_vendor"]) ~= "") then
-                    packet_os_vendor = record["_attr"]["os_vendor"]
-                end
-
-                if (record ~= nil and tostring(record["_attr"]["device_type"]) ~= "") then
-                    packet_device_type = record["_attr"]["device_type"]
-                end
-
-                if (record ~= nil and tostring(record["_attr"]["device_vendor"]) ~= "") then
-                    packet_device_vendor = record["_attr"]["device_vendor"]
-                end
-
-                --print("Current Info: (" .. packet_full_name .. " (" .. packet_os_name .. "), " .. packet_os_class .. "; " .. packet_os_vendor .. "; " .. packet_device_type .. " (by " .. packet_device_vendor .. "))")
-
-                -- Create a subtree for our current DNS match
-                local dns_subtree, _ = dns_tree:add_packet_field{
-                    protofield = osf_dns_record_tree_F,
-                    label = tostring("Match #" .. tostring(index) .. " (" .. tostring(record["dns_tests"]["test"]["_attr"]["weight"]) / tostring(dns_os_data[1]) .." %)")
-                }
-
-                dns_subtree:add(osf_dns_full_name_F, packet_full_name)
-                dns_subtree:add(osf_dns_os_name_F, packet_os_name)
-                dns_subtree:add(osf_dns_os_class_F, packet_os_class)
-                dns_subtree:add(osf_dns_os_vendor_F, packet_os_vendor)
-                dns_subtree:add(osf_dns_device_type_F, packet_device_type)
-                dns_subtree:add(osf_dns_device_vendor_F, packet_device_vendor)
-            end
+        if (dns_os_data[1] ~= nil and tostring(dns_os_data[1]["name"]) ~= "") then
+            packet_full_name = dns_os_data[1]["name"]
         end
+
+        if (dns_os_data[1] ~= nil and tostring(dns_os_data[1]["os_name"]) ~= "") then
+            packet_os_name = dns_os_data[1]["os_name"]
+        end
+
+        if (dns_os_data[1] ~= nil and tostring(dns_os_data[1]["os_class"]) ~= "") then
+            packet_os_class = dns_os_data[1]["os_class"]
+        end
+
+        if (dns_os_data[1] ~= nil and tostring(dns_os_data[1]["os_vendor"]) ~= "") then
+            packet_os_vendor = dns_os_data[1]["os_vendor"]
+        end
+
+        if (dns_os_data[1] ~= nil and tostring(dns_os_data[1]["device_type"]) ~= "") then
+            packet_device_type = dns_os_data[1]["device_type"]
+        end
+
+        if (dns_os_data[1] ~= nil and tostring(dns_os_data[1]["device_vendor"]) ~= "") then
+            packet_device_vendor = dns_os_data[1]["device_vendor"]
+        end
+
+        --print("Current Info: (" .. packet_full_name .. " (" .. packet_os_name .. "), " .. packet_os_class .. "; " .. packet_os_vendor .. "; " .. packet_device_type .. " (by " .. packet_device_vendor .. "))")
+
+        -- Create a subtree for our current DNS match
+        -- local dns_subtree, _ = dns_tree:add_packet_field{
+        --     protofield = osf_dns_record_tree_F,
+        --     label = "Best of " .. tostring(dns_os_data[3]) .. " matches" .. " (" .. string.format("%.2f", tostring((tonumber(dns_os_data[1]["weight"]) / tonumber(dns_os_data[2])) * 100)) .. " %)"
+        -- }
+
+        -- if dns_os_data[3] ~= nil then
+        --     print("dns_os_data[3] = " .. tostring(dns_os_data[3]))
+        --     dns_tree = tree:add(cgs_dns_proto, "OS Fingerprinting through DNS [Best of " .. tostring(dns_os_data[3]) .. " match(es)" .. " (" .. string.format("%.2f", tostring((tonumber(dns_os_data[1]["weight"]) / tonumber(dns_os_data[2])) * 100)) .. " %)]")
+        -- end
+
+        dns_tree:add(osf_dns_full_name_F, packet_full_name)
+        dns_tree:add(osf_dns_os_name_F, packet_os_name)
+        dns_tree:add(osf_dns_os_class_F, packet_os_class)
+        dns_tree:add(osf_dns_os_vendor_F, packet_os_vendor)
+        dns_tree:add(osf_dns_device_type_F, packet_device_type)
+        dns_tree:add(osf_dns_device_vendor_F, packet_device_vendor)
+
+        --print(inspect(dns_subtree))
+
+        --dns_tree:add(osf_dns_record_tree_F, dns_subtree)
     end
 end
 
