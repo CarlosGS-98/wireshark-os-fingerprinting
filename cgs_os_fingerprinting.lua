@@ -6,10 +6,11 @@
 --
 ----------------------------------------
 
---package.prepend_path("osf_modules")
+--package.prepend_path("osfinger_modules")
 
 -- Plugin utilities
-local osf = require("osf_utils")
+local osfinger = require("osfinger_utils")
+local osmenus = require("osfinger_menus")
 
 -- Plugin sumbodules/dissectors
---local osf_tcp = require("osf_tcp_dissector")
+--local osfinger_tcp = require("osfinger_tcp_dissector")

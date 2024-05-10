@@ -48,4 +48,4 @@ function cgs_dummy_proto.dissector(buffer,pinfo,tree)
 end
 
 -- register our protocol as a postdissector
-register_postdissector(cgs_dummy_proto)
+--register_postdissector(cgs_dummy_proto)

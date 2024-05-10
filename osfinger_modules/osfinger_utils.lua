@@ -1,37 +1,40 @@
 ----------------------------------------
--- script-name: cgs_os_fingerutils.lua
+-- script-name: osfinger_utils.lua
 --
 -- author: Carlos González Sanz <cgonzalezsanz98@gmail.com>
--- Copyleft (ɔ) 2023, Carlos González Sanz
+-- Copyleft (ɔ) 2023 - 2024, Carlos González Sanz
 --
 ----------------------------------------
 
 -- Metaplugin modules
-local lfs = require("lfs")
+--local lfs = require("lfs")
 local xml2lua = require("xml2lua")
 
 -- Our metaplugin's metatable
-local osf_utils = {}
+local osfinger_utils = {}
 
 -- Metaplugin constants
 CGS_OS_PROTO = "os-fingerprinting"
---- [END USER NOTE]: Change the line below this one if you want to use a different directory to locate Wireshark's plugins ---
+--- [END USER NOTE]: Change the line below this one if you want to use a different directory to locate this plugin and its modules ---
 CGS_OS_WIRESHARK_PLUGIN_DIR = os.getenv("HOME") .. "/.local/lib/wireshark/plugins/"
-CGS_OS_PLUGIN_MODULES_DIR = CGS_OS_WIRESHARK_PLUGIN_DIR .. "osf_modules/"
+CGS_OS_PLUGIN_MODULES_DIR = CGS_OS_WIRESHARK_PLUGIN_DIR .. "osfinger_modules/"
 
 -- Satori's fingerprint files
---OSF_SATORI_DHCP = CGS_OS_PLUGIN_MODULES_DIR .. "dhcp.xml"
-OSF_SATORI_DNS = CGS_OS_PLUGIN_MODULES_DIR .. "dns.xml"
---OSF_SATORI_ICMP = CGS_OS_PLUGIN_MODULES_DIR .. "icmp.xml"
---OSF_SATORI_SMB = CGS_OS_PLUGIN_MODULES_DIR .. "smb.xml"
---OSF_SATORI_SSL = CGS_OS_PLUGIN_MODULES_DIR .. "ssl.xml"
-OSF_SATORI_TCP = CGS_OS_PLUGIN_MODULES_DIR .. "tcp.xml"
---OSF_SATORI_UDP = CGS_OS_PLUGIN_MODULES_DIR .. "udp.xml"
+OSFINGER_SATORI_DHCP = CGS_OS_PLUGIN_MODULES_DIR .. "dhcp.xml"
+OSFINGER_SATORI_DNS = CGS_OS_PLUGIN_MODULES_DIR .. "dns.xml"
+OSFINGER_SATORI_HTTP_SERVER = CGS_OS_PLUGIN_MODULES_DIR .. "web.xml"
+OSFINGER_SATORI_HTTP_AGENT = CGS_OS_PLUGIN_MODULES_DIR .. "webuseragent.xml"
+--OSFINGER_SATORI_ICMP = CGS_OS_PLUGIN_MODULES_DIR .. "icmp.xml"
+OSFINGER_SATORI_NTP = CGS_OS_PLUGIN_MODULES_DIR .. "ntp.xml"
+OSFINGER_SATORI_SMB = CGS_OS_PLUGIN_MODULES_DIR .. "smb.xml"
+OSFINGER_SATORI_SSL = CGS_OS_PLUGIN_MODULES_DIR .. "ssl.xml"
+OSFINGER_SATORI_TCP = CGS_OS_PLUGIN_MODULES_DIR .. "tcp.xml"
+--OSFINGER_SATORI_UDP = CGS_OS_PLUGIN_MODULES_DIR .. "udp.xml"
 
 -- Function that loads Satori's XML fingerprint files
 -- and returns the contents of it:
 
-function osf_utils.preloadXML(xml_file)
+function osfinger_utils.preloadXML(xml_file)
     -- We first open our file so we can convert it
     -- to a string which we'll pass onto xml2lua
     -- to parse that XML string into a native Lua table:
@@ -53,4 +56,4 @@ function osf_utils.preloadXML(xml_file)
     return handler.root
 end
 
-return osf_utils
+return osfinger_utils

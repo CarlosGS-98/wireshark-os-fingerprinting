@@ -6,12 +6,12 @@
 --
 ----------------------------------------
 
-local osf = require("osf_utils")
-local fun = require("fun")
+local osfinger = require("osfinger_utils")
+--local fun = require("fun")
 local inspect = require("inspect")
 --local md5 = require("md5")
 
-local osf_dhcp_dissector = {}
+local osfinger_dhcp_dissector = {}
 
 -- Plugin constants/global variables
 CGS_OS_DHCP_PROTO = CGS_OS_PROTO .. "-dhcp"
@@ -21,6 +21,9 @@ local cgs_dhcp_proto = Proto(CGS_OS_DHCP_PROTO, "OS Fingerprinting - DHCP")
 
 --- Fields for this DHCP postdissector ---
 -- (WIP) --
+
+-- Preload Satori's DHCP signatures
+local osfinger_dhcp_xml = osfinger.preloadXML(OSFINGER_SATORI_DHCP)
 
 --- Extra functions for this DHCP postdissector ---
 -- (WIP) --

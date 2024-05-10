@@ -6,12 +6,14 @@
 --
 ----------------------------------------
 
-local osf = require("osf_utils")
+local osfinger = require("osfinger_utils")
 local fun = require("fun")
 local inspect = require("inspect")
 local md5 = require("md5")
 
-local osf_tcp_dissector = {}
+local osfinger_tcp_dissector = {
+    tcp_stream_table = {}
+}
 
 -- Plugin constants/global variables
 CGS_OS_TCP_PROTO = CGS_OS_PROTO .. "-tcp"
@@ -21,52 +23,52 @@ local cgs_tcp_proto = Proto(CGS_OS_TCP_PROTO, "OS Fingerprinting - TCP")
 
 --- Fields for this TCP postdissector ---
 -- TCP/IP adresses and ports (in part to build a lookup table)
-local osf_ip_src = Field.new("ip.src")
-local osf_ip_dst = Field.new("ip.dst")
-local osf_tcp_src = Field.new("tcp.srcport")
-local osf_tcp_dst = Field.new("tcp.dstport")
+local osfinger_ip_src = Field.new("ip.src")
+local osfinger_ip_dst = Field.new("ip.dst")
+local osfinger_tcp_src = Field.new("tcp.srcport")
+local osfinger_tcp_dst = Field.new("tcp.dstport")
 
 -- More specific TCP parameters
-local osf_tcp_wsize = Field.new("tcp.window_size")
-local osf_tcp_mss = Field.new("tcp.options.mss_val")
-local osf_ip_ttl = Field.new("ip.ttl")
-local osf_tcp_wscale = Field.new("tcp.options.wscale.shift")
-local osf_ip_df = Field.new("ip.flags.df")
-local osf_tcp_len = Field.new("tcp.len")
+local osfinger_tcp_wsize = Field.new("tcp.window_size")
+local osfinger_tcp_mss = Field.new("tcp.options.mss_val")
+local osfinger_ip_ttl = Field.new("ip.ttl")
+local osfinger_tcp_wscale = Field.new("tcp.options.wscale.shift")
+local osfinger_ip_df = Field.new("ip.flags.df")
+local osfinger_tcp_len = Field.new("tcp.len")
 
 -- Judging by Satori's own signatures, only the
 -- SYN and ACK flags are ever taken into account:
 
-local osf_tcp_ack = Field.new("tcp.flags.ack")
-local osf_tcp_ack_num = Field.new("tcp.ack")
-local osf_tcp_syn = Field.new("tcp.flags.syn")
-local osf_tcp_fin = Field.new("tcp.flags.fin")      -- To free entries from the lookup table whenever we're sure that a given TCP connection has ended
-local osf_tcp_urgent = Field.new("tcp.flags.urg")
-local osf_tcp_flags = Field.new("tcp.flags")        -- To detect packet anomalies
+local osfinger_tcp_ack = Field.new("tcp.flags.ack")
+local osfinger_tcp_ack_num = Field.new("tcp.ack")
+local osfinger_tcp_syn = Field.new("tcp.flags.syn")
+local osfinger_tcp_fin = Field.new("tcp.flags.fin")      -- To free entries from the lookup table whenever we're sure that a given TCP connection has ended
+local osfinger_tcp_urgent = Field.new("tcp.flags.urg")
+local osfinger_tcp_flags = Field.new("tcp.flags")        -- To detect packet anomalies
 
-local osf_tcp_options = Field.new("tcp.options")
+local osfinger_tcp_options = Field.new("tcp.options")
 
 -- Header parameters
-local osf_ip_header_len = Field.new("ip.hdr_len")
-local osf_ip_id = Field.new("ip.id")
-local osf_ip_length = Field.new("ip.len")
-local osf_tcp_header_len = Field.new("tcp.hdr_len")
+local osfinger_ip_header_len = Field.new("ip.hdr_len")
+local osfinger_ip_id = Field.new("ip.id")
+local osfinger_ip_length = Field.new("ip.len")
+local osfinger_tcp_header_len = Field.new("tcp.hdr_len")
 
 -- Extra field for storing a TCP stream lookup table
-local cgs_tcp_stream_table = {
+cgs_tcp_stream_table = {
     --[[
         Each entry in this table will have the following format:
 
         stream_string_id = {
             ip_pair = {src_ip = SRC_IP, dst_ip = DST_IP},
             port_pair = {src_port = SRC_PORT, dst_port = DST_PORT}, -- ...Should I remove this?
-            osf_data = {
+            osfinger_data = {
                 -- This is mainly to hold all the different values we store inside our protocol during a live/offline capture --
-                stream_osf_name = CGS_OS_TCP_PROTO.os_name,
-                stream_osf_class = CGS_OS_TCP_PROTO.os_class,
-                stream_osf_devname = CGS_OS_TCP_PROTO.device_name,
-                stream_osf_devtype = CGS_OS_TCP_PROTO.device_type,
-                stream_osf_devvendor = CGS_OS_TCP_PROTO.device_vendor,
+                stream_osfinger_name = CGS_OS_TCP_PROTO.os_name,
+                stream_osfinger_class = CGS_OS_TCP_PROTO.os_class,
+                stream_osfinger_devname = CGS_OS_TCP_PROTO.device_name,
+                stream_osfinger_devtype = CGS_OS_TCP_PROTO.device_type,
+                stream_osfinger_devvendor = CGS_OS_TCP_PROTO.device_vendor,
                 (...)
             }
         }, (...)
@@ -74,23 +76,23 @@ local cgs_tcp_stream_table = {
 }
 
 -- Create the fields for our "protocol"
-local osf_tcp_full_name_F = ProtoField.string(CGS_OS_TCP_PROTO .. ".full_name", "Device/OS Full Name", "Can include version info about the given OS if it's one")  
-local osf_tcp_os_name_F = ProtoField.string(CGS_OS_TCP_PROTO .. ".os_name", "OS Name")                                                      -- "name" (instead of "os_name", since it's empty most of the time)
-local osf_tcp_os_class_F = ProtoField.string(CGS_OS_TCP_PROTO .. ".os_class", "OS Class", "The OS family that this system belongs to")      -- "os_class"
-local osf_tcp_os_vendor_F = ProtoField.string(CGS_OS_TCP_PROTO .. ".os_vendor", "OS Vendor", "The OS vendor/distributor of this system")    -- "os_vendot"
---local osf_tcp_device_name_F = ProtoField.string(CGS_OS_TCP_PROTO .. ".device_name", "Device", "Device that runs this OS")                   -- "device_name"
-local osf_tcp_device_type_F = ProtoField.string(CGS_OS_TCP_PROTO .. ".device_type", "Device Type", "Device type/class")                     -- "device_type"
-local osf_tcp_device_vendor_F = ProtoField.string(CGS_OS_TCP_PROTO .. ".device_vendor", "Device Vendor")                                    -- "device_vendor"
+local osfinger_tcp_full_name_F = ProtoField.string(CGS_OS_TCP_PROTO .. ".full_name", "Device/OS Full Name", "Can include version info about the given OS if it's one")  
+local osfinger_tcp_os_name_F = ProtoField.string(CGS_OS_TCP_PROTO .. ".os_name", "OS Name")                                                      -- "name" (instead of "os_name", since it's empty most of the time)
+local osfinger_tcp_os_class_F = ProtoField.string(CGS_OS_TCP_PROTO .. ".os_class", "OS Class", "The OS family that this system belongs to")      -- "os_class"
+local osfinger_tcp_os_vendor_F = ProtoField.string(CGS_OS_TCP_PROTO .. ".os_vendor", "OS Vendor", "The OS vendor/distributor of this system")    -- "os_vendot"
+--local osfinger_tcp_device_name_F = ProtoField.string(CGS_OS_TCP_PROTO .. ".device_name", "Device", "Device that runs this OS")                   -- "device_name"
+local osfinger_tcp_device_type_F = ProtoField.string(CGS_OS_TCP_PROTO .. ".device_type", "Device Type", "Device type/class")                     -- "device_type"
+local osfinger_tcp_device_vendor_F = ProtoField.string(CGS_OS_TCP_PROTO .. ".device_vendor", "Device Vendor")                                    -- "device_vendor"
 -- (...)
 
 -- Add fields to the pseudo-protocol
-cgs_tcp_proto.fields = {osf_tcp_full_name_F, osf_tcp_os_name_F, osf_tcp_os_class_F, osf_tcp_os_vendor_F, osf_tcp_device_name_F, osf_tcp_device_type_F, osf_tcp_device_vendor_F}
+cgs_tcp_proto.fields = {osfinger_tcp_full_name_F, osfinger_tcp_os_name_F, osfinger_tcp_os_class_F, osfinger_tcp_os_vendor_F, osfinger_tcp_device_name_F, osfinger_tcp_device_type_F, osfinger_tcp_device_vendor_F}
 
 -- Preload Satori's TCP signatures
-local osf_tcp_xml = osf.preloadXML(OSF_SATORI_TCP)
+local osfinger_tcp_xml = osfinger.preloadXML(OSFINGER_SATORI_TCP)
 
 -- Make a partition of all TCP signatures based on their match type
-local function osf_tcp_signature_partition(finger_db)
+local function osfinger_tcp_signature_partition(finger_db)
     -- Traverse the entire TCP database to correctly
     -- store exact signatures matches and partial ones
     -- on separate tables, which will improve performance
@@ -131,14 +133,14 @@ local function osf_tcp_signature_partition(finger_db)
     return exact_list, partial_list
 end
 
-local osf_tcp_exact_list, osf_tcp_partial_list = osf_tcp_signature_partition(osf_tcp_xml)
---print(inspect(osf_tcp_exact_list))
+local osfinger_tcp_exact_list, osfinger_tcp_partial_list = osfinger_tcp_signature_partition(osfinger_tcp_xml)
+--print(inspect(osfinger_tcp_exact_list))
 
 -- Function that allows us to build p0f TCP signatures
 -- based on the captured data (to compare it later against
 -- Satori's TCP fingerprint database):
 
-function osf_tcp_dissector.osf_build_tcp_signature(packet_data)
+function osfinger_tcp_dissector.osfinger_build_tcp_signature(packet_data)
     -- We'll store some of the info contained inside packet_data
     -- inside a new anonymous table so we can later concatenate its contents
     -- (ideally with ":" as the separator).
@@ -306,7 +308,7 @@ end
 -- Function that tries to find a signature match between
 -- the current frame and all TCP signatures:
 
-function osf_tcp_dissector.osf_tcp_match(cur_packet_data, finger_db)
+function osfinger_tcp_dissector.osfinger_tcp_match(cur_packet_data, finger_db)
     -- Before filtering all fingerprints to look at
     -- those that match certain parameters, we must extract
     -- the main root of the TCP DB table to both ease the workload
@@ -344,10 +346,10 @@ function osf_tcp_dissector.osf_tcp_match(cur_packet_data, finger_db)
 
     if string.find(cur_packet_data["tcp_signature"], "*") == nil then
         tcp_match_type = "exact"
-        tcp_lookup_db = osf_tcp_exact_list
+        tcp_lookup_db = osfinger_tcp_exact_list
     else
         tcp_match_type = "partial"
-        tcp_lookup_db = osf_tcp_partial_list
+        tcp_lookup_db = osfinger_tcp_partial_list
     end
 
     -- Traverse the right fingerprint list
@@ -402,7 +404,7 @@ function osf_tcp_dissector.osf_tcp_match(cur_packet_data, finger_db)
 
         -- Rewrite the current signature string
         cur_packet_data["ttl"] = new_ttl
-        new_tcp_sig = osf_tcp_dissector.osf_build_tcp_signature(cur_packet_data)
+        new_tcp_sig = osfinger_tcp_dissector.osfinger_build_tcp_signature(cur_packet_data)
         cur_packet_data["tcp_signature"] = new_tcp_sig
 
         ttl_round_check = false
@@ -424,40 +426,40 @@ function cgs_tcp_proto.dissector(buffer, pinfo, tree)
     -- keep track of the same streams even if
     -- they arrive at different times:
 
-    local ip_src = osf_ip_src()
-    local ip_dst = osf_ip_dst()
-    local tcp_src = osf_tcp_src()
-    local tcp_dst = osf_tcp_dst()
+    local ip_src = osfinger_ip_src()
+    local ip_dst = osfinger_ip_dst()
+    local tcp_src = osfinger_tcp_src()
+    local tcp_dst = osfinger_tcp_dst()
 
     -- Check relevant TCP flags
-    local ack_check = osf_tcp_ack()
-    local ack_num = osf_tcp_ack_num()
-    local fin_check = osf_tcp_fin()
-    local syn_check = osf_tcp_syn()
-    local urg_check = osf_tcp_urgent()
+    local ack_check = osfinger_tcp_ack()
+    local ack_num = osfinger_tcp_ack_num()
+    local fin_check = osfinger_tcp_fin()
+    local syn_check = osfinger_tcp_syn()
+    local urg_check = osfinger_tcp_urgent()
 
     -- Store other TCP/IP options
-    local tcp_wsize = osf_tcp_wsize()
-    local ip_ttl = osf_ip_ttl()
-    local ip_df_check = osf_ip_df()
-    local tcp_len = osf_tcp_len()
-    local tcp_mss = osf_tcp_mss()
+    local tcp_wsize = osfinger_tcp_wsize()
+    local ip_ttl = osfinger_ip_ttl()
+    local ip_df_check = osfinger_ip_df()
+    local tcp_len = osfinger_tcp_len()
+    local tcp_mss = osfinger_tcp_mss()
     if tcp_mss == nil then
         tcp_mss = "*"
     end
 
-    local tcp_wscale = osf_tcp_wscale()
+    local tcp_wscale = osfinger_tcp_wscale()
     if tcp_wscale == nil then
         tcp_wscale = "*"
     end
 
-    local ip_hdrlen = osf_ip_header_len()
-    local ip_id = osf_ip_id()
-    local ip_len = osf_ip_length()
-    local tcp_hdrlen = osf_tcp_header_len()
+    local ip_hdrlen = osfinger_ip_header_len()
+    local ip_id = osfinger_ip_id()
+    local ip_len = osfinger_ip_length()
+    local tcp_hdrlen = osfinger_tcp_header_len()
 
-    local tcp_flags = osf_tcp_flags()
-    local tcp_options = osf_tcp_options()
+    local tcp_flags = osfinger_tcp_flags()
+    local tcp_options = osfinger_tcp_options()
     local tcp_opt_array = ""
     if tcp_options ~= nil then
         tcp_opt_array = tcp_options()
@@ -531,7 +533,7 @@ function cgs_tcp_proto.dissector(buffer, pinfo, tree)
                 }
 
                 --print("Der Tafel wurde richtig konstruiert!")
-                local str_sig = osf_tcp_dissector.osf_build_tcp_signature(temp_tcp_sig) -- p0fv2 format, as in Satori
+                local str_sig = osfinger_tcp_dissector.osfinger_build_tcp_signature(temp_tcp_sig) -- p0fv2 format, as in Satori
                 print("Current TCP Signature = \"" .. str_sig .. "\"")
 
                 -- As our final step before writing our extracted data
@@ -543,7 +545,7 @@ function cgs_tcp_proto.dissector(buffer, pinfo, tree)
                 temp_tcp_sig["tcp_signature"] = str_sig
 
                 -- Let's check what we got back
-                tcp_os_data = osf_tcp_dissector.osf_tcp_match(temp_tcp_sig, osf_tcp_xml)
+                tcp_os_data = osfinger_tcp_dissector.osfinger_tcp_match(temp_tcp_sig, osfinger_tcp_xml)
                 --print(tcp_os_data ~= nil)
                 if tcp_os_data ~= nil then
 
@@ -603,13 +605,15 @@ function cgs_tcp_proto.dissector(buffer, pinfo, tree)
 
         --print("Current Info: (" .. packet_full_name .. " (" .. packet_os_name .. "), " .. packet_os_class .. "; " .. packet_os_vendor .. "; " .. packet_device_type .. " (by " .. packet_device_vendor .. "))")
 
-        tcp_tree:add(osf_tcp_full_name_F, packet_full_name)
-        tcp_tree:add(osf_tcp_os_name_F, packet_os_name)
-        tcp_tree:add(osf_tcp_os_class_F, packet_os_class)
-        tcp_tree:add(osf_tcp_os_vendor_F, packet_os_vendor)
-        tcp_tree:add(osf_tcp_device_type_F, packet_device_type)
-        tcp_tree:add(osf_tcp_device_vendor_F, packet_device_vendor)
+        tcp_tree:add(osfinger_tcp_full_name_F, packet_full_name)
+        tcp_tree:add(osfinger_tcp_os_name_F, packet_os_name)
+        tcp_tree:add(osfinger_tcp_os_class_F, packet_os_class)
+        tcp_tree:add(osfinger_tcp_os_vendor_F, packet_os_vendor)
+        tcp_tree:add(osfinger_tcp_device_type_F, packet_device_type)
+        tcp_tree:add(osfinger_tcp_device_vendor_F, packet_device_vendor)
     end
+
+    osfinger_tcp_dissector.tcp_stream_table = cgs_tcp_stream_table
 end
 
 -- We add this "protocol" as a postdissector
@@ -618,6 +622,6 @@ register_postdissector(cgs_tcp_proto)
 --local tcp_port_table = DissectorTable.get("tcp.port")
 --tcp_port_table:add("0-65535", cgs_tcp_proto)
 
-return osf_tcp_dissector
+return osfinger_tcp_dissector
 --local inspect = require("inspect")
 --print(inspect(cgs_tcp_stream_table))

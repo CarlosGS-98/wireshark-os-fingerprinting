@@ -6,12 +6,12 @@
 --
 ----------------------------------------
 
-local osf = require("osf_utils")
+local osfinger = require("osfinger_utils")
 local fun = require("fun")
 local inspect = require("inspect")
 local md5 = require("md5")
 
-local osf_dns_dissector = {}
+local osfinger_dns_dissector = {}
 
 -- Plugin constants/global variables
 CGS_OS_DNS_PROTO = CGS_OS_PROTO .. "-dns"
@@ -21,32 +21,32 @@ DNS_NO_NAME = "NONE"
 local cgs_dns_proto = Proto(CGS_OS_DNS_PROTO, "OS Fingerprinting - DNS")
 
 --- Fields for this DNS postdissector ---
-local osf_dns_id = Field.new("dns.id")
-local osf_dns_query_name = Field.new("dns.qry.name")
-local osf_dns_response_name = Field.new("dns.resp.name")
+local osfinger_dns_id = Field.new("dns.id")
+local osfinger_dns_query_name = Field.new("dns.qry.name")
+local osfinger_dns_response_name = Field.new("dns.resp.name")
 
 -- Fields for the DNS dissection tree
-local osf_dns_full_name_F = ProtoField.string(CGS_OS_DNS_PROTO .. ".full_name", "Device/OS Full Name", "Can include version info about the given OS if it's one")  
-local osf_dns_os_name_F = ProtoField.string(CGS_OS_DNS_PROTO .. ".os_name", "OS Name")                                                      -- "name" (instead of "os_name", since it's empty most of the time)
-local osf_dns_os_class_F = ProtoField.string(CGS_OS_DNS_PROTO .. ".os_class", "OS Class", "The OS family that this system belongs to")      -- "os_class"
-local osf_dns_os_vendor_F = ProtoField.string(CGS_OS_DNS_PROTO .. ".os_vendor", "OS Vendor", "The OS vendor/distributor of this system")    -- "os_vendot"                   -- "device_name"
-local osf_dns_device_type_F = ProtoField.string(CGS_OS_DNS_PROTO .. ".device_type", "Device Type", "Device type/class")                     -- "device_type"
-local osf_dns_device_vendor_F = ProtoField.string(CGS_OS_DNS_PROTO .. ".device_vendor", "Device Vendor")
-local osf_dns_record_tree_F = ProtoField.string(CGS_OS_DNS_PROTO .. ".record", "Current Match")
+local osfinger_dns_full_name_F = ProtoField.string(CGS_OS_DNS_PROTO .. ".full_name", "Device/OS Full Name", "Can include version info about the given OS if it's one")  
+local osfinger_dns_os_name_F = ProtoField.string(CGS_OS_DNS_PROTO .. ".os_name", "OS Name")                                                      -- "name" (instead of "os_name", since it's empty most of the time)
+local osfinger_dns_os_class_F = ProtoField.string(CGS_OS_DNS_PROTO .. ".os_class", "OS Class", "The OS family that this system belongs to")      -- "os_class"
+local osfinger_dns_os_vendor_F = ProtoField.string(CGS_OS_DNS_PROTO .. ".os_vendor", "OS Vendor", "The OS vendor/distributor of this system")    -- "os_vendot"                   -- "device_name"
+local osfinger_dns_device_type_F = ProtoField.string(CGS_OS_DNS_PROTO .. ".device_type", "Device Type", "Device type/class")                     -- "device_type"
+local osfinger_dns_device_vendor_F = ProtoField.string(CGS_OS_DNS_PROTO .. ".device_vendor", "Device Vendor")
+local osfinger_dns_record_tree_F = ProtoField.string(CGS_OS_DNS_PROTO .. ".record", "Current Match")
 
 -- Add fields to the pseudo-protocol
-cgs_dns_proto.fields = {osf_dns_full_name_F, osf_dns_os_name_F, osf_dns_os_class_F, osf_dns_os_vendor_F, osf_dns_device_type_F, osf_dns_device_vendor_F, osf_dns_record_tree_F}
+cgs_dns_proto.fields = {osfinger_dns_full_name_F, osfinger_dns_os_name_F, osfinger_dns_os_class_F, osfinger_dns_os_vendor_F, osfinger_dns_device_type_F, osfinger_dns_device_vendor_F, osfinger_dns_record_tree_F}
 
 -- Base TCP/IP adresses and ports (in part to build a lookup table)
-local osf_ip_src = Field.new("ip.src")
-local osf_ip_dst = Field.new("ip.dst")
-local osf_tcp_src = Field.new("tcp.srcport")
-local osf_tcp_dst = Field.new("tcp.dstport")
-local osf_udp_src = Field.new("udp.srcport")
-local osf_udp_dst = Field.new("udp.dstport")
+local osfinger_ip_src = Field.new("ip.src")
+local osfinger_ip_dst = Field.new("ip.dst")
+local osfinger_tcp_src = Field.new("tcp.srcport")
+local osfinger_tcp_dst = Field.new("tcp.dstport")
+local osfinger_udp_src = Field.new("udp.srcport")
+local osfinger_udp_dst = Field.new("udp.dstport")
 
 --- Flag fields for this DNS postdissector ---
-local osf_dns_flags = Field.new("dns.flags")    -- We expect this to be a byte array (maybe)
+local osfinger_dns_flags = Field.new("dns.flags")    -- We expect this to be a byte array (maybe)
 
 -- Extra field for storing a DNS stream lookup table
 local cgs_dns_stream_table = {
@@ -62,10 +62,10 @@ local cgs_dns_stream_table = {
 }
 
 -- Preload Satori's DNS signatures
-local osf_dns_xml = osf.preloadXML(OSF_SATORI_DNS)
+local osfinger_dns_xml = osfinger.preloadXML(OSFINGER_SATORI_DNS)
 
 -- Make a partition of all DNS signatures based on their match type
-local function osf_dns_signature_partition(finger_db)
+local function osfinger_dns_signature_partition(finger_db)
     -- Traverse the entire DNS database to correctly
     -- store exact signatures matches and partial ones
     -- on separate tables, which will improve performance
@@ -122,11 +122,11 @@ local function osf_dns_signature_partition(finger_db)
     return exact_list, partial_list
 end
 
-local osf_dns_exact_list, osf_dns_partial_list = osf_dns_signature_partition(osf_dns_xml)
---print("Current exact matches list: " .. tostring(inspect(osf_dns_exact_list)))
-print("Current partial matches list: " .. tostring(inspect(osf_dns_partial_list)))
+local osfinger_dns_exact_list, osfinger_dns_partial_list = osfinger_dns_signature_partition(osfinger_dns_xml)
+--print("Current exact matches list: " .. tostring(inspect(osfinger_dns_exact_list)))
+--print("Current partial matches list: " .. tostring(inspect(osfinger_dns_partial_list)))
 
-function osf_dns_dissector.osf_dns_match(cur_packet_data, finger_db)
+function osfinger_dns_dissector.osfinger_dns_match(cur_packet_data, finger_db)
     -- Get both the query and response domain names
     local dns_response_names = {}
 
@@ -146,7 +146,7 @@ function osf_dns_dissector.osf_dns_match(cur_packet_data, finger_db)
     local record_flag = false
 
     -- DNS exact list traversal
-    for _, elem in ipairs(osf_dns_exact_list) do
+    for _, elem in ipairs(osfinger_dns_exact_list) do
         
         for _, test_record in ipairs(elem["tests"]) do
             record_flag = true
@@ -177,7 +177,7 @@ function osf_dns_dissector.osf_dns_match(cur_packet_data, finger_db)
     print("Responses (After exact matches) = " .. tostring(inspect(dns_response_names)))
 
     -- DNS partial list traversal (if we need to)
-    for _, elem in ipairs(osf_dns_partial_list) do
+    for _, elem in ipairs(osfinger_dns_partial_list) do
         --print("Record flag = " .. tostring(record_flag))
         --print("Current partial element = " .. tostring(inspect(elem)))
         for _, test_record in ipairs(elem["tests"]) do
@@ -228,9 +228,9 @@ end
 
 function cgs_dns_proto.dissector(buffer, pinfo, tree)
     -- (WIP) --
-    local dns_id = osf_dns_id()
-    local query_name = osf_dns_query_name()
-    local response_name = osf_dns_response_name()
+    local dns_id = osfinger_dns_id()
+    local query_name = osfinger_dns_query_name()
+    local response_name = osfinger_dns_response_name()
 
     -- Looking at Python Satori's code (),
     -- it seems that we should only deal
@@ -238,13 +238,13 @@ function cgs_dns_proto.dissector(buffer, pinfo, tree)
     -- to either 0x0100 (DNS Standard Query (= 256))
     -- or 0x8180 (DNS Standard Response (= 33152))
 
-    local ip_src = osf_ip_src()
-    local ip_dst = osf_ip_dst()
-    local tcp_src = osf_tcp_src()
-    local tcp_dst = osf_tcp_dst()
-    local udp_src = osf_udp_src()
-    local udp_dst = osf_udp_dst()
-    local dns_flags = osf_dns_flags()
+    local ip_src = osfinger_ip_src()
+    local ip_dst = osfinger_ip_dst()
+    local tcp_src = osfinger_tcp_src()
+    local tcp_dst = osfinger_tcp_dst()
+    local udp_src = osfinger_udp_src()
+    local udp_dst = osfinger_udp_dst()
+    local dns_flags = osfinger_dns_flags()
 
     if dns_id ~= nil and ip_src ~= nil and ip_dst ~= nil and (dns_flags.value == 0x100 or dns_flags.value == 0x8180) then
         local dns_tree = tree:add(cgs_dns_proto, "OS Fingerprinting through DNS")
@@ -297,7 +297,7 @@ function cgs_dns_proto.dissector(buffer, pinfo, tree)
             print(inspect(temp_dns_sig) .. "\n")
 
             -- Let's check what we got back
-            dns_os_data = osf_dns_dissector.osf_dns_match(temp_dns_sig, osf_dns_xml)
+            dns_os_data = osfinger_dns_dissector.osfinger_dns_match(temp_dns_sig, osfinger_dns_xml)
             print("Do we have DNS data?: " .. tostring(dns_os_data[1] ~= nil))
             if dns_os_data[1] ~= nil then
                 -- Store the result in the current stream record
@@ -360,7 +360,7 @@ function cgs_dns_proto.dissector(buffer, pinfo, tree)
 
         -- Create a subtree for our current DNS match
         -- local dns_subtree, _ = dns_tree:add_packet_field{
-        --     protofield = osf_dns_record_tree_F,
+        --     protofield = osfinger_dns_record_tree_F,
         --     label = "Best of " .. tostring(dns_os_data[3]) .. " matches" .. " (" .. string.format("%.2f", tostring((tonumber(dns_os_data[1]["weight"]) / tonumber(dns_os_data[2])) * 100)) .. " %)"
         -- }
 
@@ -369,16 +369,16 @@ function cgs_dns_proto.dissector(buffer, pinfo, tree)
         --     dns_tree = tree:add(cgs_dns_proto, "OS Fingerprinting through DNS [Best of " .. tostring(dns_os_data[3]) .. " match(es)" .. " (" .. string.format("%.2f", tostring((tonumber(dns_os_data[1]["weight"]) / tonumber(dns_os_data[2])) * 100)) .. " %)]")
         -- end
 
-        dns_tree:add(osf_dns_full_name_F, packet_full_name)
-        dns_tree:add(osf_dns_os_name_F, packet_os_name)
-        dns_tree:add(osf_dns_os_class_F, packet_os_class)
-        dns_tree:add(osf_dns_os_vendor_F, packet_os_vendor)
-        dns_tree:add(osf_dns_device_type_F, packet_device_type)
-        dns_tree:add(osf_dns_device_vendor_F, packet_device_vendor)
+        dns_tree:add(osfinger_dns_full_name_F, packet_full_name)
+        dns_tree:add(osfinger_dns_os_name_F, packet_os_name)
+        dns_tree:add(osfinger_dns_os_class_F, packet_os_class)
+        dns_tree:add(osfinger_dns_os_vendor_F, packet_os_vendor)
+        dns_tree:add(osfinger_dns_device_type_F, packet_device_type)
+        dns_tree:add(osfinger_dns_device_vendor_F, packet_device_vendor)
 
         --print(inspect(dns_subtree))
 
-        --dns_tree:add(osf_dns_record_tree_F, dns_subtree)
+        --dns_tree:add(osfinger_dns_record_tree_F, dns_subtree)
     end
 end
 
@@ -388,4 +388,4 @@ register_postdissector(cgs_dns_proto)
 -- local dns_port_table = udp_port_table:get_dissector(53)
 -- dns_port_table:add("-", cgs_dns_proto)
 
-return osf_dns_dissector
+return osfinger_dns_dissector
