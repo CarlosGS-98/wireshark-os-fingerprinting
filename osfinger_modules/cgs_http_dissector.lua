@@ -54,84 +54,15 @@ local osfinger_ip_dst = Field.new("ip.dst")
 local osfinger_tcp_src = Field.new("tcp.srcport")
 local osfinger_tcp_dst = Field.new("tcp.dstport")
 
--- Extra field for storing an HTTP stream lookup table
-local cgs_http_stream_table = {
-    --[[
-        Each entry in this table will have the following format:
-
-        <stream_string_id> = {
-            ip_pair = {src_ip = SRC_IP, dst_ip = DST_IP},
-            port_pair = {src_port = SRC_PORT, dst_port = DST_PORT},
-            http_os_data = {server = SERVER, user_agent = USER_AGENT}
-        }, (...)
-    ]]--
-}
-
 -- Preload Satori's HTTP signatures
 local osfinger_http_server_xml = osfinger.preloadXML(OSFINGER_SATORI_HTTP_SERVER)
 local osfinger_http_agent_xml = osfinger.preloadXML(OSFINGER_SATORI_HTTP_AGENT)
 
 --- Extra functions for this HTTP postdissector ---
 -- (WIP) --
-local function osfinger_http_signature_partition(finger_db, protocol_root, test_root)
-    -- Traverse the entire DNS database to correctly
-    -- store exact signatures matches and partial ones
-    -- on separate tables, which will improve performance
-    -- when performing database lookups:
 
-    local finger_root = finger_db[protocol_root]["fingerprints"]["fingerprint"]
-    local exact_list, partial_list = {}, {}
-
-    for _, record in ipairs(finger_root) do
-        local exact_tests = {}
-        local partial_tests = {}
-
-        -- Manual filtering due to massive bugs
-        -- when using LuaFun's API with our DB:
-
-        if record[test_root]["test"] ~= nil then
-            local record_flag = false
-            for _, elem in ipairs(record[test_root]["test"]) do
-                record_flag = true
-
-                if elem["_attr"]["matchtype"] == "exact" then
-                    table.insert(exact_tests, elem)
-                else
-                    table.insert(partial_tests, elem)
-                end
-            end
-
-            if not record_flag then
-                -- We have to use this as a fallback
-                -- until we discover why our previous
-                -- iterator gives up when the current
-                -- record only contains a single test:
-
-                if record[test_root]["test"]["_attr"]["matchtype"] == "exact" then
-                    table.insert(exact_list, {info = record["_attr"], tests = record[test_root]["test"]})
-                else
-                    table.insert(partial_list, {info = record["_attr"], tests = record[test_root]["test"]})
-                end
-            else
-                -- Add the current results to both tables
-                -- if we extract any corresponding matches:
-
-                if #exact_tests > 0 then
-                    table.insert(exact_list, {info = record["_attr"], tests = exact_tests})
-                end
-
-                if #partial_tests > 0 then
-                    table.insert(partial_list, {info = record["_attr"], tests = partial_tests})
-                end
-            end
-        end
-    end
-
-    return exact_list, partial_list
-end
-
-local osfinger_http_server_exact_list, osfinger_http_server_partial_list = osfinger_http_signature_partition(osfinger_http_server_xml, "WEBSERVER", "webserver_tests")
-local osfinger_http_agent_exact_list, osfinger_http_agent_partial_list = osfinger_http_signature_partition(osfinger_http_agent_xml, "WEBUSERAGENT", "webuseragent_tests")
+local osfinger_http_server_exact_list, osfinger_http_server_partial_list = osfinger.signature_partition(osfinger_http_server_xml, "WEBSERVER", "webserver_tests")
+local osfinger_http_agent_exact_list, osfinger_http_agent_partial_list = osfinger.signature_partition(osfinger_http_agent_xml, "WEBUSERAGENT", "webuseragent_tests")
 
 function osfinger_http_dissector.osfinger_http_webserver_match(cur_packet_data)
     local http_webserver_names = {}
@@ -370,26 +301,26 @@ function cgs_http_proto.dissector(buffer, pinfo, tree)
             local cur_stream_id = md5.sumhexa(tostring(ip_src) .. tostring(ip_dst) .. tostring(tcp_src) .. tostring(tcp_dst)) -- For consistency
             local temp_http_sig = {}
 
-            if cgs_http_stream_table[cur_stream_id] == nil then
+            if osfinger.http_stream_table[cur_stream_id] == nil then
                 -- Build a new entry in the stream table
                 -- with the current address and port info:
 
-                cgs_http_stream_table[cur_stream_id] = {}
+                osfinger.http_stream_table[cur_stream_id] = {}
                 print("New HTTP stream ID detected: " .. cur_stream_id)
                 print("Address pair: [" .. tostring(ip_src) .. ":" .. tostring(tcp_src) .. ", " .. tostring(ip_dst) .. ":" .. tostring(tcp_dst) .. "]")
 
                 -- Fill the current entry in the HTTP stream table
-                cgs_http_stream_table[cur_stream_id]["ip_pair"] = {
+                osfinger.http_stream_table[cur_stream_id]["ip_pair"] = {
                     src_ip = tostring(ip_src),
                     dst_ip = tostring(ip_dst)
                 }
 
-                cgs_http_stream_table[cur_stream_id]["port_pair"] = {
+                osfinger.http_stream_table[cur_stream_id]["port_pair"] = {
                     src_port = tostring(tcp_src),
                     dst_port = tostring(tcp_dst)
                 }
 
-                print(inspect(cgs_http_stream_table[cur_stream_id]))
+                print(inspect(osfinger.http_stream_table[cur_stream_id]))
 
                 -- After that, the next step is to build
                 -- our ad-hoc and compare it

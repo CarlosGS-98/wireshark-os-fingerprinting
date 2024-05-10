@@ -48,81 +48,9 @@ local osfinger_udp_dst = Field.new("udp.dstport")
 --- Flag fields for this DNS postdissector ---
 local osfinger_dns_flags = Field.new("dns.flags")    -- We expect this to be a byte array (maybe)
 
--- Extra field for storing a DNS stream lookup table
-local cgs_dns_stream_table = {
-    --[[
-        Each entry in this table will have the following format:
-
-        <stream_string_id> = {
-            ip_pair = {src_ip = SRC_IP, dst_ip = DST_IP},
-            port_pair = {src_port = SRC_PORT, dst_port = DST_PORT},
-            dns_id = DNS_ID
-        }, (...)
-    ]]--
-}
-
 -- Preload Satori's DNS signatures
 local osfinger_dns_xml = osfinger.preloadXML(OSFINGER_SATORI_DNS)
-
--- Make a partition of all DNS signatures based on their match type
-local function osfinger_dns_signature_partition(finger_db)
-    -- Traverse the entire DNS database to correctly
-    -- store exact signatures matches and partial ones
-    -- on separate tables, which will improve performance
-    -- when performing database lookups:
-
-    local finger_root = finger_db["DNS"]["fingerprints"]["fingerprint"]
-    local exact_list, partial_list = {}, {}
-
-    for _, record in ipairs(finger_root) do
-        local exact_tests = {}
-        local partial_tests = {}
-
-        -- Manual filtering due to massive bugs
-        -- when using LuaFun's API with our DB:
-
-        if record["dns_tests"]["test"] ~= nil then
-            local record_flag = false
-            for _, elem in ipairs(record["dns_tests"]["test"]) do
-                record_flag = true
-
-                if elem["_attr"]["matchtype"] == "exact" then
-                    table.insert(exact_tests, elem)
-                else
-                    table.insert(partial_tests, elem)
-                end
-            end
-
-            if not record_flag then
-                -- We have to use this as a fallback
-                -- until we discover why our previous
-                -- iterator gives up when the current
-                -- record only contains a single test:
-
-                if record["dns_tests"]["test"]["_attr"]["matchtype"] == "exact" then
-                    table.insert(exact_list, {info = record["_attr"], tests = record["dns_tests"]["test"]})
-                else
-                    table.insert(partial_list, {info = record["_attr"], tests = record["dns_tests"]["test"]})
-                end
-            else
-                -- Add the current results to both tables
-                -- if we extract any corresponding matches:
-
-                if #exact_tests > 0 then
-                    table.insert(exact_list, {info = record["_attr"], tests = exact_tests})
-                end
-
-                if #partial_tests > 0 then
-                    table.insert(partial_list, {info = record["_attr"], tests = partial_tests})
-                end
-            end
-        end
-    end
-
-    return exact_list, partial_list
-end
-
-local osfinger_dns_exact_list, osfinger_dns_partial_list = osfinger_dns_signature_partition(osfinger_dns_xml)
+local osfinger_dns_exact_list, osfinger_dns_partial_list = osfinger.signature_partition(osfinger_dns_xml, "DNS", "dns_tests")
 --print("Current exact matches list: " .. tostring(inspect(osfinger_dns_exact_list)))
 --print("Current partial matches list: " .. tostring(inspect(osfinger_dns_partial_list)))
 
@@ -254,11 +182,11 @@ function cgs_dns_proto.dissector(buffer, pinfo, tree)
         local cur_stream_id = md5.sumhexa(tostring(ip_src) .. tostring(ip_dst) .. tostring(tcp_src) .. tostring(tcp_dst)) -- For consistency
         local temp_dns_sig = {}
 
-        if cgs_dns_stream_table[cur_stream_id] == nil then
+        if osfinger.dns_stream_table[cur_stream_id] == nil then
             -- Build a new entry in the stream table
             -- with the current address and port info:
 
-            cgs_dns_stream_table[cur_stream_id] = {}
+            osfinger.dns_stream_table[cur_stream_id] = {}
             print("New DNS stream ID detected: " .. cur_stream_id)
 
             -- Check which transport layer protocol was used
@@ -268,19 +196,19 @@ function cgs_dns_proto.dissector(buffer, pinfo, tree)
             print("Address pair: [" .. tostring(ip_src) .. ":" .. tostring(cur_src_port) .. ", " .. tostring(ip_dst) .. ":" .. tostring(cur_dst_port) .. "]")
 
             -- Fill the current entry in the DNS stream table
-            cgs_dns_stream_table[cur_stream_id]["ip_pair"] = {
+            osfinger.dns_stream_table[cur_stream_id]["ip_pair"] = {
                 src_ip = tostring(ip_src),
                 dst_ip = tostring(ip_dst)
             }
 
-            cgs_dns_stream_table[cur_stream_id]["port_pair"] = {
+            osfinger.dns_stream_table[cur_stream_id]["port_pair"] = {
                 src_port = tostring(cur_src_port),
                 dst_port = tostring(cur_dst_port)
             }
 
-            cgs_dns_stream_table[cur_stream_id]["dns_id"] = tostring(dns_id)
+            osfinger.dns_stream_table[cur_stream_id]["dns_id"] = tostring(dns_id)
 
-            print(inspect(cgs_dns_stream_table[cur_stream_id]))
+            print(inspect(osfinger.dns_stream_table[cur_stream_id]))
 
             -- After that, the next step is to build
             -- our signature (in p0f format) and compare it
@@ -301,8 +229,8 @@ function cgs_dns_proto.dissector(buffer, pinfo, tree)
             print("Do we have DNS data?: " .. tostring(dns_os_data[1] ~= nil))
             if dns_os_data[1] ~= nil then
                 -- Store the result in the current stream record
-                cgs_dns_stream_table[cur_stream_id]["os_data"] = dns_os_data
-                print(inspect(cgs_dns_stream_table[cur_stream_id]["os_data"]))
+                osfinger.dns_stream_table[cur_stream_id]["os_data"] = dns_os_data
+                print(inspect(osfinger.dns_stream_table[cur_stream_id]["os_data"]))
             end
             -- (...)
         else
@@ -311,8 +239,8 @@ function cgs_dns_proto.dissector(buffer, pinfo, tree)
 
             --- [TODO]: Fetch TCP signature info for the current packet ---
             --[[local stored_stream_id = md5.sumhexa(tostring(ip_src) .. tostring(ip_dst) )--.. tostring(tcp_src) .. tostring(tcp_dst))
-            if cgs_dns_stream_table[cur_stream_id]["os_data"] ~= nil then
-                dns_os_data = cgs_dns_stream_table[cur_stream_id]["os_data"]
+            if osfinger.dns_stream_table[cur_stream_id]["os_data"] ~= nil then
+                dns_os_data = osfinger.dns_stream_table[cur_stream_id]["os_data"]
                 --print(inspect(dns_os_data))
             end]]
             --print("[INFO]: Current packet's stream key is " .. tostring(stored_stream_id))

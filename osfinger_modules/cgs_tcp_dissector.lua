@@ -54,27 +54,6 @@ local osfinger_ip_id = Field.new("ip.id")
 local osfinger_ip_length = Field.new("ip.len")
 local osfinger_tcp_header_len = Field.new("tcp.hdr_len")
 
--- Extra field for storing a TCP stream lookup table
-cgs_tcp_stream_table = {
-    --[[
-        Each entry in this table will have the following format:
-
-        stream_string_id = {
-            ip_pair = {src_ip = SRC_IP, dst_ip = DST_IP},
-            port_pair = {src_port = SRC_PORT, dst_port = DST_PORT}, -- ...Should I remove this?
-            osfinger_data = {
-                -- This is mainly to hold all the different values we store inside our protocol during a live/offline capture --
-                stream_osfinger_name = CGS_OS_TCP_PROTO.os_name,
-                stream_osfinger_class = CGS_OS_TCP_PROTO.os_class,
-                stream_osfinger_devname = CGS_OS_TCP_PROTO.device_name,
-                stream_osfinger_devtype = CGS_OS_TCP_PROTO.device_type,
-                stream_osfinger_devvendor = CGS_OS_TCP_PROTO.device_vendor,
-                (...)
-            }
-        }, (...)
-    ]]--
-}
-
 -- Create the fields for our "protocol"
 local osfinger_tcp_full_name_F = ProtoField.string(CGS_OS_TCP_PROTO .. ".full_name", "Device/OS Full Name", "Can include version info about the given OS if it's one")  
 local osfinger_tcp_os_name_F = ProtoField.string(CGS_OS_TCP_PROTO .. ".os_name", "OS Name")                                                      -- "name" (instead of "os_name", since it's empty most of the time)
@@ -133,7 +112,7 @@ local function osfinger_tcp_signature_partition(finger_db)
     return exact_list, partial_list
 end
 
-local osfinger_tcp_exact_list, osfinger_tcp_partial_list = osfinger_tcp_signature_partition(osfinger_tcp_xml)
+local osfinger_tcp_exact_list, osfinger_tcp_partial_list = osfinger.signature_partition(osfinger_tcp_xml, "TCP", "tcp_tests")
 --print(inspect(osfinger_tcp_exact_list))
 
 -- Function that allows us to build p0f TCP signatures
@@ -485,24 +464,24 @@ function cgs_tcp_proto.dissector(buffer, pinfo, tree)
             local cur_stream_id = md5.sumhexa(tostring(ip_src) .. tostring(ip_dst)) --.. tostring(tcp_src) .. tostring(tcp_dst)) -- For consistency
             local temp_tcp_sig = {}
 
-            if cgs_tcp_stream_table[cur_stream_id] == nil then
+            if osfinger.tcp_stream_table[cur_stream_id] == nil then
                 -- Build a new entry in the stream table
                 -- with the current address and port info:
 
-                cgs_tcp_stream_table[cur_stream_id] = {}
+                osfinger.tcp_stream_table[cur_stream_id] = {}
                 print("New TCP stream ID detected: " .. cur_stream_id)
 
-                cgs_tcp_stream_table[cur_stream_id]["ip_pair"] = {
+                osfinger.tcp_stream_table[cur_stream_id]["ip_pair"] = {
                     src_ip = tostring(ip_src),
                     dst_ip = tostring(ip_dst)
                 }
 
-                --[[cgs_tcp_stream_table[cur_stream_id]["port_pair"] = {
+                --[[osfinger.tcp_stream_table[cur_stream_id]["port_pair"] = {
                     src_port = tostring(tcp_src),
                     dst_port = tostring(tcp_dst)
                 }]]--
 
-                print(inspect(cgs_tcp_stream_table[cur_stream_id]))
+                print(inspect(osfinger.tcp_stream_table[cur_stream_id]))
 
                 -- After that, the next step is to build
                 -- our signature (in p0f format) and compare it
@@ -550,8 +529,8 @@ function cgs_tcp_proto.dissector(buffer, pinfo, tree)
                 if tcp_os_data ~= nil then
 
                     -- Store the result in the current stream record
-                    cgs_tcp_stream_table[cur_stream_id]["os_data"] = tcp_os_data
-                    --print(inspect(cgs_tcp_stream_table[cur_stream_id]["os_data"]))
+                    osfinger.tcp_stream_table[cur_stream_id]["os_data"] = tcp_os_data
+                    --print(inspect(osfinger.tcp_stream_table[cur_stream_id]["os_data"]))
                 end
                 -- (...)
             else
@@ -560,8 +539,8 @@ function cgs_tcp_proto.dissector(buffer, pinfo, tree)
 
                 --- [TODO]: Fetch TCP signature info for the current packet ---
                 local stored_stream_id = md5.sumhexa(tostring(ip_src) .. tostring(ip_dst) )--.. tostring(tcp_src) .. tostring(tcp_dst))
-                if cgs_tcp_stream_table[cur_stream_id]["os_data"] ~= nil then
-                    tcp_os_data = cgs_tcp_stream_table[cur_stream_id]["os_data"]
+                if osfinger.tcp_stream_table[cur_stream_id]["os_data"] ~= nil then
+                    tcp_os_data = osfinger.tcp_stream_table[cur_stream_id]["os_data"]
                     --print(inspect(tcp_os_data))
                 end
                 --print("[INFO]: Current packet's stream key is " .. tostring(stored_stream_id))
@@ -613,7 +592,7 @@ function cgs_tcp_proto.dissector(buffer, pinfo, tree)
         tcp_tree:add(osfinger_tcp_device_vendor_F, packet_device_vendor)
     end
 
-    osfinger_tcp_dissector.tcp_stream_table = cgs_tcp_stream_table
+    osfinger_tcp_dissector.tcp_stream_table = osfinger.tcp_stream_table
 end
 
 -- We add this "protocol" as a postdissector
@@ -624,4 +603,4 @@ register_postdissector(cgs_tcp_proto)
 
 return osfinger_tcp_dissector
 --local inspect = require("inspect")
---print(inspect(cgs_tcp_stream_table))
+--print(inspect(osfinger.tcp_stream_table))
