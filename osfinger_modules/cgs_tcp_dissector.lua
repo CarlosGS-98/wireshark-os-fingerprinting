@@ -68,7 +68,7 @@ local osfinger_tcp_device_vendor_F = ProtoField.string(CGS_OS_TCP_PROTO .. ".dev
 cgs_tcp_proto.fields = {osfinger_tcp_full_name_F, osfinger_tcp_os_name_F, osfinger_tcp_os_class_F, osfinger_tcp_os_vendor_F, osfinger_tcp_device_name_F, osfinger_tcp_device_type_F, osfinger_tcp_device_vendor_F}
 
 -- Preload Satori's TCP signatures
-local osfinger_tcp_xml = osfinger.preloadXML(OSFINGER_SATORI_TCP)
+local osfinger_tcp_xml = osfinger.preloadXML(OSFINGER_SATORI_TCP)["TCP"]
 
 -- Make a partition of all TCP signatures based on their match type
 local function osfinger_tcp_signature_partition(finger_db)

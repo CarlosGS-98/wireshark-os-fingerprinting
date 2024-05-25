@@ -55,8 +55,8 @@ local osfinger_tcp_src = Field.new("tcp.srcport")
 local osfinger_tcp_dst = Field.new("tcp.dstport")
 
 -- Preload Satori's HTTP signatures
-local osfinger_http_server_xml = osfinger.preloadXML(OSFINGER_SATORI_HTTP_SERVER)
-local osfinger_http_agent_xml = osfinger.preloadXML(OSFINGER_SATORI_HTTP_AGENT)
+local osfinger_http_server_xml = osfinger.preloadXML(OSFINGER_SATORI_HTTP_SERVER)["WEBSERVER"]
+local osfinger_http_agent_xml = osfinger.preloadXML(OSFINGER_SATORI_HTTP_AGENT)["WEBUSERAGENT"]
 
 --- Extra functions for this HTTP postdissector ---
 -- (WIP) --
@@ -90,6 +90,8 @@ function osfinger_http_dissector.osfinger_http_webserver_match(cur_packet_data)
     -- HTTP exact list traversal
     for index, elem in ipairs(osfinger_http_server_exact_list) do
         print("Analizing exact user matches... (" .. tostring(index) .. ")")
+        record_flag = false
+
         
         for _, test_record in ipairs(elem["tests"]) do
             record_flag = true
@@ -121,15 +123,17 @@ function osfinger_http_dissector.osfinger_http_webserver_match(cur_packet_data)
 
     -- DNS partial list traversal (if we need to)
     for _, elem in ipairs(osfinger_http_server_partial_list) do
+        record_flag = false
+
         --print("Record flag = " .. tostring(record_flag))
         --print("Current partial element = " .. tostring(inspect(elem)))
         for _, test_record in ipairs(elem["tests"]) do
             record_flag = true
             print(test_record["_attr"]["webserver"])
             print(tostring(test_record["_attr"]["webserver"]) .. " (VS) " .. tostring(cur_packet_data["web_server"]))
-            print(tostring(string.match(tostring(test_record["_attr"]["webserver"]), tostring(cur_packet_data["web_server"])) ~= nil))
+            print(tostring(string.match(tostring(cur_packet_data["web_server"]), tostring(test_record["_attr"]["webserver"])) ~= nil))
 
-            if string.match(tostring(test_record["_attr"]["webserver"]), tostring(cur_packet_data["web_server"])) ~= nil then
+            if string.match(tostring(cur_packet_data["web_server"]), tostring(test_record["_attr"]["webserver"])) ~= nil then
             --if tostring(test_record["_attr"]["webserver"]) == cur_packet_data["user_agent"] then
                 elem["info"]["weight"] = tonumber(test_record["_attr"]["weight"])
                 table.insert(http_webserver_names, elem["info"])
@@ -145,7 +149,7 @@ function osfinger_http_dissector.osfinger_http_webserver_match(cur_packet_data)
             -- iterator gives up when the current
             -- record only contains a single test:
 
-            if string.match(tostring(elem["tests"]["_attr"]["webserver"]), cur_packet_data["web_server"]) ~= nil then
+            if string.match(cur_packet_data["web_server"], tostring(elem["tests"]["_attr"]["webserver"])) ~= nil then
                 elem["info"]["weight"] = tonumber(elem["tests"]["_attr"]["weight"])
                 table.insert(http_webserver_names, elem["info"])
                 total_record_weight = total_record_weight + tonumber(elem["tests"]["_attr"]["weight"])
@@ -157,13 +161,14 @@ function osfinger_http_dissector.osfinger_http_webserver_match(cur_packet_data)
     print("Responses (After partial matches (Web Server)) = " .. tostring(inspect(http_webserver_names)))
 
     if total_record_weight > 0 then
-        table.sort(http_webserver_names, function(r1, r2)
-            return r1["weight"] > r2["weight"]
-        end)
+        -- table.sort(http_webserver_names, function(r1, r2)
+        --     return r1["weight"] > r2["weight"]
+        -- end)
 
-        print(inspect(http_webserver_names))
+        -- print(inspect(http_webserver_names))
 
-        return {http_webserver_names[1], total_record_weight, total_matches}
+        --return {http_webserver_names[1], total_record_weight, total_matches}
+        return http_webserver_names[1]
     else
         return nil
     end
@@ -194,7 +199,7 @@ function osfinger_http_dissector.osfinger_http_useragent_match(cur_packet_data)
     --- HTTP User Agent ---
     -- HTTP exact list traversal
     for _, elem in ipairs(osfinger_http_agent_exact_list) do
-        
+        record_flag = false
         for _, test_record in ipairs(elem["tests"]) do
             record_flag = true
 
@@ -223,17 +228,18 @@ function osfinger_http_dissector.osfinger_http_useragent_match(cur_packet_data)
 
     print("Responses (After exact matches (User Agent)) = " .. tostring(inspect(http_useragent_names)))
 
-    -- DNS partial list traversal (if we need to)
+    -- HTTP partial list traversal (if we need to)
     for _, elem in ipairs(osfinger_http_agent_partial_list) do
+        record_flag = false
         --print("Record flag = " .. tostring(record_flag))
         --print("Current partial element = " .. tostring(inspect(elem)))
         for _, test_record in ipairs(elem["tests"]) do
             record_flag = true
             print(test_record["_attr"]["webuseragent"])
             print(tostring(test_record["_attr"]["webuseragent"]) .. " (VS) " .. tostring(cur_packet_data["user_agent"]))
-            print(tostring(string.match(tostring(test_record["_attr"]["webuseragent"]), tostring(cur_packet_data["user_agent"])) ~= nil))
+            print(tostring(string.match(tostring(cur_packet_data["user_agent"]), tostring(test_record["_attr"]["webuseragent"]))) ~= nil)
 
-            if string.match(tostring(test_record["_attr"]["webuseragent"]), tostring(cur_packet_data["user_agent"])) ~= nil then
+            if string.match(tostring(cur_packet_data["user_agent"]), tostring(test_record["_attr"]["webuseragent"])) ~= nil then
             --if tostring(test_record["_attr"]["webuseragent"]) == cur_packet_data["user_agent"] then
                 elem["info"]["weight"] = tonumber(test_record["_attr"]["weight"])
                 table.insert(http_useragent_names, elem["info"])
@@ -249,7 +255,7 @@ function osfinger_http_dissector.osfinger_http_useragent_match(cur_packet_data)
             -- iterator gives up when the current
             -- record only contains a single test:
 
-            if string.match(tostring(elem["tests"]["_attr"]["webuseragent"]), cur_packet_data["user_agent"]) ~= nil then
+            if string.match(cur_packet_data["user_agent"], tostring(elem["tests"]["_attr"]["webuseragent"])) ~= nil then
                 elem["info"]["weight"] = tonumber(elem["tests"]["_attr"]["weight"])
                 table.insert(http_useragent_names, elem["info"])
                 total_record_weight = total_record_weight + tonumber(elem["tests"]["_attr"]["weight"])
@@ -261,13 +267,14 @@ function osfinger_http_dissector.osfinger_http_useragent_match(cur_packet_data)
     print("Responses (After partial matches (User Agent)) = " .. tostring(inspect(http_useragent_names)))
 
     if total_record_weight > 0 then
-        table.sort(http_useragent_names, function(r1, r2)
-            return r1["weight"] > r2["weight"]
-        end)
+        -- table.sort(http_useragent_names, function(r1, r2)
+        --     return r1["weight"] > r2["weight"]
+        -- end)
 
-        print(inspect(http_useragent_names))
+        -- print(inspect(http_useragent_names))
 
-        return {http_useragent_names[1], total_record_weight, total_matches}
+        --return {http_useragent_names[1], total_record_weight, total_matches}
+        return http_useragent_names[1]
     else
         return nil
     end
@@ -345,7 +352,8 @@ function cgs_http_proto.dissector(buffer, pinfo, tree)
                     http_webserver_data = osfinger_http_dissector.osfinger_http_webserver_match(temp_http_sig)
                     print("Do we have web server data?: " .. tostring(http_webserver_data ~= nil))
                     if http_webserver_data ~= nil then
-                        print("Webserver Data = " .. tostring(inspect(http_webserver_data[1])) .. "\n")
+                        print("Webserver Data = " .. tostring(inspect(http_webserver_data)) .. "\n")
+                        osfinger.http_stream_table[cur_stream_id]["http_server_data"] = http_webserver_data
                     end
                 end
 
@@ -354,8 +362,22 @@ function cgs_http_proto.dissector(buffer, pinfo, tree)
                     http_useragent_data = osfinger_http_dissector.osfinger_http_useragent_match(temp_http_sig)
                     print("Do we have user agent data?: " .. tostring(http_useragent_data ~= nil))
                     if http_useragent_data ~= nil then
-                        print("User Agent Data = " .. tostring(inspect(http_useragent_data[1])) .. "\n")
+                        print("User Agent Data = " .. tostring(inspect(http_useragent_data)) .. "\n")
+                        osfinger.http_stream_table[cur_stream_id]["http_agent_data"] = http_useragent_data
                     end
+                end
+
+                print(inspect(osfinger.http_stream_table[cur_stream_id]))
+            else
+                -- If we get here, we just assume that
+                -- this packet belongs to a previous stream:
+    
+                if osfinger.http_stream_table[cur_stream_id]["http_agent_data"] ~= nil then
+                    http_useragent_data = osfinger.http_stream_table[cur_stream_id]["http_agent_data"]
+                end
+
+                if osfinger.http_stream_table[cur_stream_id]["http_server_data"] ~= nil then
+                    http_webserver_data = osfinger.http_stream_table[cur_stream_id]["http_server_data"]
                 end
             end
         end
@@ -374,79 +396,79 @@ function cgs_http_proto.dissector(buffer, pinfo, tree)
 
         --print("Current OS Data = " .. inspect(tcp_os_data))
 
-        if (http_useragent_data ~= nil and tostring(http_useragent_data[1]["name"]) ~= "") then
-            packet_full_name = http_useragent_data[1]["name"]
+        if (http_useragent_data ~= nil and tostring(http_useragent_data["name"]) ~= "") then
+            packet_full_name = http_useragent_data["name"]
         end
 
-        if (http_webserver_data ~= nil and tostring(http_webserver_data[1]["name"]) ~= "") then
-            packet_full_name = http_webserver_data[1]["name"]
-        end
-
-
-        if (http_useragent_data ~= nil and tostring(http_useragent_data[1]["os_name"]) ~= "") then
-            packet_full_name = http_useragent_data[1]["os_name"]
-        end
-
-        if (http_webserver_data ~= nil and tostring(http_webserver_data[1]["os_name"]) ~= "") then
-            packet_os_name = http_webserver_data[1]["os_name"]
+        if (http_webserver_data ~= nil and tostring(http_webserver_data["name"]) ~= "") then
+            packet_full_name = http_webserver_data["name"]
         end
 
 
-        if (http_useragent_data ~= nil and tostring(http_useragent_data[1]["os_class"]) ~= "") then
-            packet_full_name = http_useragent_data[1]["os_class"]
+        if (http_useragent_data ~= nil and tostring(http_useragent_data["os_name"]) ~= "") then
+            packet_os_name = http_useragent_data["os_name"]
         end
 
-        if (http_webserver_data ~= nil and tostring(http_webserver_data[1]["os_class"]) ~= "") then
-            packet_os_class = http_webserver_data[1]["os_class"]
-        end
-
-
-        if (http_useragent_data ~= nil and tostring(http_useragent_data[1]["os_vendor"]) ~= "") then
-            packet_full_name = http_useragent_data[1]["os_vendor"]
-        end
-
-        if (http_webserver_data ~= nil and tostring(http_webserver_data[1]["os_vendor"]) ~= "") then
-            packet_os_vendor = http_webserver_data[1]["os_vendor"]
+        if (http_webserver_data ~= nil and tostring(http_webserver_data["os_name"]) ~= "") then
+            packet_os_name = http_webserver_data["os_name"]
         end
 
 
-        if (http_useragent_data ~= nil and tostring(http_useragent_data[1]["device_type"]) ~= "") then
-            packet_full_name = http_useragent_data[1]["device_type"]
+        if (http_useragent_data ~= nil and tostring(http_useragent_data["os_class"]) ~= "") then
+            packet_os_class = http_useragent_data["os_class"]
         end
 
-        if (http_webserver_data ~= nil and tostring(http_webserver_data[1]["device_type"]) ~= "") then
-            packet_device_type = http_webserver_data[1]["device_type"]
-        end
-
-
-        if (http_useragent_data ~= nil and tostring(http_useragent_data[1]["device_vendor"]) ~= "") then
-            packet_full_name = http_useragent_data[1]["device_vendor"]
-        end
-
-        if (http_webserver_data ~= nil and tostring(http_webserver_data[1]["device_vendor"]) ~= "") then
-            packet_device_vendor = http_webserver_data[1]["device_vendor"]
+        if (http_webserver_data ~= nil and tostring(http_webserver_data["os_class"]) ~= "") then
+            packet_os_class = http_webserver_data["os_class"]
         end
 
 
-        if (http_webserver_data ~= nil and tostring(http_webserver_data[1]["name"]) ~= "") then
-            packet_web_server_name = http_webserver_data[1]["name"]
+        if (http_useragent_data ~= nil and tostring(http_useragent_data["os_vendor"]) ~= "") then
+            packet_os_vendor = http_useragent_data["os_vendor"]
+        end
+
+        if (http_webserver_data ~= nil and tostring(http_webserver_data["os_vendor"]) ~= "") then
+            packet_os_vendor = http_webserver_data["os_vendor"]
         end
 
 
-        if (http_useragent_data ~= nil and tostring(http_useragent_data[1]["webuseragent"]) ~= "") then
-            packet_user_agent_name = http_useragent_data[1]["webuseragent"]
+        if (http_useragent_data ~= nil and tostring(http_useragent_data["device_type"]) ~= "") then
+            packet_device_type = http_useragent_data["device_type"]
         end
 
-        print("Current HTTP Info: (" .. packet_full_name .. " (" .. packet_os_name .. "), " .. packet_os_class .. "; " .. packet_os_vendor .. "; " .. packet_device_type .. " (by " .. packet_device_vendor .. ")); " .. packet_web_server_name .. "; " .. packet_user_agent_name)
+        if (http_webserver_data ~= nil and tostring(http_webserver_data["device_type"]) ~= "") then
+            packet_device_type = http_webserver_data["device_type"]
+        end
 
-        http_tree:add(osfinger_http_full_name_F, packet_full_name)
-        http_tree:add(osfinger_http_os_name_F, packet_os_name)
-        http_tree:add(osfinger_http_os_class_F, packet_os_class)
-        http_tree:add(osfinger_http_os_vendor_F, packet_os_vendor)
-        http_tree:add(osfinger_http_device_type_F, packet_device_type)
-        http_tree:add(osfinger_http_device_vendor_F, packet_device_vendor)
-        http_tree:add(osfinger_http_server_F, packet_web_server_name)
-        http_tree:add(osfinger_http_agent_F, packet_user_agent_name)
+
+        if (http_useragent_data ~= nil and tostring(http_useragent_data["device_vendor"]) ~= "") then
+            packet_device_vendor = http_useragent_data["device_vendor"]
+        end
+
+        if (http_webserver_data ~= nil and tostring(http_webserver_data["device_vendor"]) ~= "") then
+            packet_device_vendor = http_webserver_data["device_vendor"]
+        end
+
+
+        if (http_webserver_data ~= nil and tostring(http_webserver_data["name"]) ~= "") then
+            packet_web_server_name = http_webserver_data["name"]
+        end
+
+
+        if (http_useragent_data ~= nil and tostring(http_useragent_data["webuseragent"]) ~= "") then
+            packet_user_agent_name = http_useragent_data["webuseragent"]
+        end
+
+        --print("Current HTTP Info: (" .. packet_full_name .. " (" .. packet_os_name .. "), " .. packet_os_class .. "; " .. packet_os_vendor .. "; " .. packet_device_type .. " (by " .. packet_device_vendor .. ")); " .. packet_web_server_name .. "; " .. packet_user_agent_name)
+
+        http_tree:add(osfinger_http_full_name_F, tostring(packet_full_name))
+        http_tree:add(osfinger_http_os_name_F, tostring(packet_os_name))
+        http_tree:add(osfinger_http_os_class_F, tostring(packet_os_class))
+        http_tree:add(osfinger_http_os_vendor_F, tostring(packet_os_vendor))
+        http_tree:add(osfinger_http_device_type_F, tostring(packet_device_type))
+        http_tree:add(osfinger_http_device_vendor_F, tostring(packet_device_vendor))
+        http_tree:add(osfinger_http_server_F, tostring(packet_web_server_name))
+        http_tree:add(osfinger_http_agent_F, tostring(packet_user_agent_name))
     end
 end
 

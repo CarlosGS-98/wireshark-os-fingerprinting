@@ -24,16 +24,28 @@ OSFINGER_SATORI_DHCP = CGS_OS_PLUGIN_MODULES_DIR .. "dhcp.xml"
 OSFINGER_SATORI_DNS = CGS_OS_PLUGIN_MODULES_DIR .. "dns.xml"
 OSFINGER_SATORI_HTTP_SERVER = CGS_OS_PLUGIN_MODULES_DIR .. "web.xml"
 OSFINGER_SATORI_HTTP_AGENT = CGS_OS_PLUGIN_MODULES_DIR .. "webuseragent.xml"
---OSFINGER_SATORI_ICMP = CGS_OS_PLUGIN_MODULES_DIR .. "icmp.xml"
 OSFINGER_SATORI_NTP = CGS_OS_PLUGIN_MODULES_DIR .. "ntp.xml"
+OSFINGER_SATORI_SIP = CGS_OS_PLUGIN_MODULES_DIR .. "sip.xml"
 OSFINGER_SATORI_SMB = CGS_OS_PLUGIN_MODULES_DIR .. "smb.xml"
 OSFINGER_SATORI_SSL = CGS_OS_PLUGIN_MODULES_DIR .. "ssl.xml"
 OSFINGER_SATORI_TCP = CGS_OS_PLUGIN_MODULES_DIR .. "tcp.xml"
---OSFINGER_SATORI_UDP = CGS_OS_PLUGIN_MODULES_DIR .. "udp.xml"
 
 -- Global protocol stream tables
 
---- Extra field for storing a DNS stream lookup table
+--. DHCP stream lookup table
+osfinger_utils.dhcp_stream_table = {
+    --[[
+        Each entry in this table will have the following format:
+
+        <stream_string_id> = {
+            ip_pair = {src_ip = SRC_IP, dst_ip = DST_IP},
+            port_pair = {src_port = SRC_PORT, dst_port = DST_PORT},
+            dhcp_os_data = {server = SERVER, user_agent = USER_AGENT}
+        }, (...)
+    ]]--
+}
+
+--- DNS stream lookup table
 osfinger_utils.dns_stream_table = {
     --[[
         Each entry in this table will have the following format:
@@ -55,6 +67,58 @@ osfinger_utils.http_stream_table = {
             ip_pair = {src_ip = SRC_IP, dst_ip = DST_IP},
             port_pair = {src_port = SRC_PORT, dst_port = DST_PORT},
             http_os_data = {server = SERVER, user_agent = USER_AGENT}
+        }, (...)
+    ]]--
+}
+
+--. NTP stream lookup table
+osfinger_utils.ntp_stream_table = {
+    --[[
+        Each entry in this table will have the following format:
+
+        <stream_string_id> = {
+            ip_pair = {src_ip = SRC_IP, dst_ip = DST_IP},
+            port_pair = {src_port = SRC_PORT, dst_port = DST_PORT},
+            ntp_os_data = {server = SERVER, user_agent = USER_AGENT}
+        }, (...)
+    ]]--
+}
+
+-- SIP stream lookup table
+osfinger_utils.sip_stream_table = {
+    --[[
+        Each entry in this table will have the following format:
+
+        <stream_string_id> = {
+            ip_pair = {src_ip = SRC_IP, dst_ip = DST_IP},
+            port_pair = {src_port = SRC_PORT, dst_port = DST_PORT}
+            sip_os_data = {server = SERVER, (...)}
+        }, (...)
+    ]]--
+}
+
+--. SMB stream lookup table
+osfinger_utils.smb_stream_table = {
+    --[[
+        Each entry in this table will have the following format:
+
+        <stream_string_id> = {
+            ip_pair = {src_ip = SRC_IP, dst_ip = DST_IP},
+            port_pair = {src_port = SRC_PORT, dst_port = DST_PORT},
+            smb_os_data = {server = SERVER, user_agent = USER_AGENT}
+        }, (...)
+    ]]--
+}
+
+--. SSL stream lookup table
+osfinger_utils.ssl_stream_table = {
+    --[[
+        Each entry in this table will have the following format:
+
+        <stream_string_id> = {
+            ip_pair = {src_ip = SRC_IP, dst_ip = DST_IP},
+            port_pair = {src_port = SRC_PORT, dst_port = DST_PORT},
+            ssl_os_data = {server = SERVER, user_agent = USER_AGENT}
         }, (...)
     ]]--
 }
@@ -111,7 +175,7 @@ function osfinger_utils.signature_partition(finger_db, protocol_root, test_root)
     -- on separate tables, which will improve performance
     -- when performing database lookups:
 
-    local finger_root = finger_db[protocol_root]["fingerprints"]["fingerprint"]
+    local finger_root = finger_db["fingerprints"]["fingerprint"]
     local exact_list, partial_list = {}, {}
 
     for _, record in ipairs(finger_root) do
