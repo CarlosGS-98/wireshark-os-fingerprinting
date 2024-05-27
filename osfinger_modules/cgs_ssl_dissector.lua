@@ -116,8 +116,6 @@ function osfinger_ssl_dissector.osfinger_ssl_match(cur_packet_data)
     --     --     return r1["weight"] > r2["weight"]
     --     -- end)
 
-    --     -- print(inspect(ssl_signature_names))
-
     --     --return {ssl_signature_names[1], total_record_weight, total_matches}
     --     return ssl_signature_names[1]
     -- else
@@ -161,8 +159,6 @@ function cgs_ssl_proto.dissector(buffer, pinfo, tree)
             -- with the current address and port info:
 
             osfinger.ssl_stream_table[cur_stream_id] = {}
-            print("New SSL stream ID detected: " .. cur_stream_id)
-            print("Address pair: [" .. tostring(ip_src) .. ":" .. tostring(tcp_src) .. ", " .. tostring(ip_dst) .. ":" .. tostring(tcp_dst) .. "]")
 
             -- Fill the current entry in the DNS stream table
             osfinger.ssl_stream_table[cur_stream_id]["ip_pair"] = {
@@ -174,8 +170,6 @@ function cgs_ssl_proto.dissector(buffer, pinfo, tree)
                 src_port = tostring(tcp_src),
                 dst_port = tostring(tcp_dst)
             }
-
-            print(inspect(osfinger.ssl_stream_table[cur_stream_id]))
 
             -- After that, the next step is to build
             -- our signature (in p0f format) and compare it
@@ -189,15 +183,12 @@ function cgs_ssl_proto.dissector(buffer, pinfo, tree)
                 -- Other options will be added later if they exist in the current packet
             }
 
-            print(inspect(temp_ssl_sig) .. "\n")
-
             -- Let's check what we got back
             ssl_os_data = osfinger_ssl_dissector.osfinger_ssl_match(temp_ssl_sig)
-            print("Do we have SSL data?: " .. tostring(ssl_os_data ~= nil))
+
             if ssl_os_data ~= nil then
                 -- Store the result in the current stream record
                 osfinger.ssl_stream_table[cur_stream_id]["os_data"] = ssl_os_data
-                print(inspect(osfinger.ssl_stream_table[cur_stream_id]["os_data"]))
             end
             -- (...)
         else

@@ -51,8 +51,6 @@ local osfinger_dns_flags = Field.new("dns.flags")    -- We expect this to be a b
 -- Preload Satori's DNS signatures
 local osfinger_dns_xml = osfinger.preloadXML(OSFINGER_SATORI_DNS)["DNS"]
 local osfinger_dns_exact_list, osfinger_dns_partial_list = osfinger.signature_partition(osfinger_dns_xml, "DNS", "dns_tests")
---print("Current exact matches list: " .. tostring(inspect(osfinger_dns_exact_list)))
---print("Current partial matches list: " .. tostring(inspect(osfinger_dns_partial_list)))
 
 function osfinger_dns_dissector.osfinger_dns_match(cur_packet_data, finger_db)
     -- Get both the query and response domain names
@@ -75,10 +73,8 @@ function osfinger_dns_dissector.osfinger_dns_match(cur_packet_data, finger_db)
 
     -- DNS exact list traversal
     for _, elem in ipairs(osfinger_dns_exact_list) do
-        
         for _, test_record in ipairs(elem["tests"]) do
             record_flag = true
-
             if tostring(test_record["_attr"]["dns"]) == tostring(cur_packet_data["response_name"]) then
                 elem["info"]["weight"] = tonumber(test_record["_attr"]["weight"])
                 table.insert(dns_response_names, elem["info"])
@@ -104,8 +100,6 @@ function osfinger_dns_dissector.osfinger_dns_match(cur_packet_data, finger_db)
 
     -- DNS partial list traversal (if we need to)
     for _, elem in ipairs(osfinger_dns_partial_list) do
-        --print("Record flag = " .. tostring(record_flag))
-        --print("Current partial element = " .. tostring(inspect(elem)))
         for _, test_record in ipairs(elem["tests"]) do
             record_flag = true
 
@@ -118,7 +112,7 @@ function osfinger_dns_dissector.osfinger_dns_match(cur_packet_data, finger_db)
             end
         end
 
-        --print("Haben wir das Vorherige überlebt?")
+
         if not record_flag then
             -- We have to use this as a fallback
             -- until we discover why our previous
@@ -138,9 +132,6 @@ function osfinger_dns_dissector.osfinger_dns_match(cur_packet_data, finger_db)
         -- table.sort(dns_response_names, function(r1, r2)
         --     return r1["weight"] > r2["weight"]
         -- end)
-
-        -- print(inspect(dns_response_names))
-
         --return {dns_response_names[1], total_record_weight, total_matches}
         return dns_response_names[1]
     else
@@ -185,9 +176,9 @@ function cgs_dns_proto.dissector(buffer, pinfo, tree)
             -- with the current address and port info:
 
             osfinger.dns_stream_table[cur_stream_id] = {}
-            print("New DNS stream ID detected: " .. cur_stream_id)
 
-            print("Address pair: [" .. tostring(ip_src) .. ":" .. tostring(cur_src_port) .. ", " .. tostring(ip_dst) .. ":" .. tostring(cur_dst_port) .. "]")
+
+
 
             -- Fill the current entry in the DNS stream table
             osfinger.dns_stream_table[cur_stream_id]["ip_pair"] = {
@@ -202,7 +193,7 @@ function cgs_dns_proto.dissector(buffer, pinfo, tree)
 
             osfinger.dns_stream_table[cur_stream_id]["dns_id"] = tostring(dns_id)
 
-            print(inspect(osfinger.dns_stream_table[cur_stream_id]))
+
 
             -- After that, the next step is to build
             -- our signature (in p0f format) and compare it
@@ -216,15 +207,15 @@ function cgs_dns_proto.dissector(buffer, pinfo, tree)
                 -- Other options will be added later if they exist in the current packet
             }
 
-            print(inspect(temp_dns_sig) .. "\n")
+
 
             -- Let's check what we got back
             dns_os_data = osfinger_dns_dissector.osfinger_dns_match(temp_dns_sig, osfinger_dns_xml)
-            print("Do we have DNS data?: " .. tostring(dns_os_data ~= nil))
+
             if dns_os_data ~= nil then
                 -- Store the result in the current stream record
                 osfinger.dns_stream_table[cur_stream_id]["os_data"] = dns_os_data
-                print(inspect(osfinger.dns_stream_table[cur_stream_id]["os_data"]))
+
             end
             -- (...)
         else
@@ -275,7 +266,7 @@ function cgs_dns_proto.dissector(buffer, pinfo, tree)
             packet_device_vendor = tostring(dns_os_data["device_vendor"])
         end
 
-        print("Current Info (DNS): (" .. packet_full_name .. " (" .. packet_os_name .. "), " .. packet_os_class .. "; " .. packet_os_vendor .. "; " .. packet_device_type .. " (by " .. packet_device_vendor .. "))")
+
 
         -- Create a subtree for our current DNS match
         -- local dns_subtree, _ = dns_tree:add_packet_field{
@@ -284,7 +275,7 @@ function cgs_dns_proto.dissector(buffer, pinfo, tree)
         -- }
 
         -- if dns_os_data[3] ~= nil then
-        --     print("dns_os_data[3] = " .. tostring(dns_os_data[3]))
+
         --     dns_tree = tree:add(cgs_dns_proto, "OS Fingerprinting through DNS [Best of " .. tostring(dns_os_data[3]) .. " match(es)" .. " (" .. string.format("%.2f", tostring((tonumber(dns_os_data[1]["weight"]) / tonumber(dns_os_data[2])) * 100)) .. " %)]")
         -- end
 
@@ -295,7 +286,7 @@ function cgs_dns_proto.dissector(buffer, pinfo, tree)
         dns_tree:add(osfinger_dns_device_type_F, tostring(packet_device_type))
         dns_tree:add(osfinger_dns_device_vendor_F, tostring(packet_device_vendor))
 
-        --print(inspect(dns_subtree))
+
 
         --dns_tree:add(osfinger_dns_record_tree_F, dns_subtree)
     end

@@ -113,7 +113,7 @@ function osfinger_smb_dissector.osfinger_smb_match(cur_packet_data)
     -- SMB partial list traversal (if we need to)
     for _, elem in ipairs(osfinger_smb_partial_list) do
         record_flag = false
-        --print("Current partial element = " .. tostring(inspect(elem)))
+
         for _, test_record in ipairs(elem["tests"]) do
             record_flag = true
 
@@ -126,10 +126,10 @@ function osfinger_smb_dissector.osfinger_smb_match(cur_packet_data)
 
             elseif string.match(tostring(cur_packet_data["native_lanman"]), tostring(test_record["_attr"]["smbnativelanman"])) ~= nil then
                 --if tostring(test_record["_attr"]["smbserver"]) == cur_packet_data["user_agent"] then
-                    elem["info"]["weight"] = tonumber(test_record["_attr"]["weight"])
-                    table.insert(smb_smbserver_names, elem["info"])
-                    total_record_weight = total_record_weight + tonumber(test_record["_attr"]["weight"])
-                    total_matches = total_matches + 1
+                elem["info"]["weight"] = tonumber(test_record["_attr"]["weight"])
+                table.insert(smb_smbserver_names, elem["info"])
+                total_record_weight = total_record_weight + tonumber(test_record["_attr"]["weight"])
+                total_matches = total_matches + 1
             end
         end
 
@@ -158,8 +158,6 @@ function osfinger_smb_dissector.osfinger_smb_match(cur_packet_data)
     --     -- table.sort(smb_signature_names, function(r1, r2)
     --     --     return r1["weight"] > r2["weight"]
     --     -- end)
-
-    --     -- print(inspect(smb_signature_names))
 
     --     --return {smb_signature_names[1], total_record_weight, total_matches}
     --     return smb_signature_names[1]
@@ -201,8 +199,6 @@ function cgs_smb_proto.dissector(buffer, pinfo, tree)
             -- with the current address and port info:
 
             osfinger.smb_stream_table[cur_stream_id] = {}
-            print("New SMB stream ID detected: " .. cur_stream_id)
-            print("Address pair: [" .. tostring(ip_src) .. ":" .. tostring(tcp_src) .. ", " .. tostring(ip_dst) .. ":" .. tostring(tcp_dst) .. "]")
 
             -- Fill the current entry in the SMB stream table
             osfinger.smb_stream_table[cur_stream_id]["ip_pair"] = {
@@ -215,8 +211,6 @@ function cgs_smb_proto.dissector(buffer, pinfo, tree)
                 dst_port = tostring(tcp_dst)
             }
 
-            print(inspect(osfinger.smb_stream_table[cur_stream_id]))
-
             -- After that, the next step is to build
             -- our signature (in p0f format) and compare it
             -- against the entries we have inside Satori's
@@ -228,15 +222,13 @@ function cgs_smb_proto.dissector(buffer, pinfo, tree)
                 -- Other options will be added later if they exist in the current packet
             }
 
-            print(inspect(temp_smb_sig) .. "\n")
-
             -- Let's check what we got back
             smb_os_data = osfinger_smb_dissector.osfinger_smb_match(temp_smb_sig)
-            print("Do we have SMB data?: " .. tostring(smb_os_data ~= nil))
+
             if smb_os_data ~= nil then
                 -- Store the result in the current stream record
                 osfinger.smb_stream_table[cur_stream_id]["os_data"] = smb_os_data
-                print(inspect(osfinger.smb_stream_table[cur_stream_id]["os_data"]))
+
             end
             -- (...)
         else

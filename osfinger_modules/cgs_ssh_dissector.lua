@@ -45,9 +45,6 @@ local osfinger_tcp_dst = Field.new("tcp.dstport")
 local osfinger_ssh_xml = osfinger.preloadXML(OSFINGER_SATORI_SSH)["SSH"]
 local osfinger_ssh_exact_list, osfinger_ssh_partial_list = osfinger.signature_partition(osfinger_ssh_xml, "SSH", "ssh_tests")
 
--- print("Exact SSH List = " .. inspect(osfinger_ssh_exact_list))
--- print("Partial SSH List = " .. inspect(osfinger_ssh_partial_list))
-
 --- Extra functions for this SSH postdissector ---
 function osfinger_ssh_dissector.osfinger_ssh_match(cur_packet_data)
     local ssh_protocol_names = {}
@@ -74,7 +71,7 @@ function osfinger_ssh_dissector.osfinger_ssh_match(cur_packet_data)
         for _, test_record in ipairs(elem["tests"]) do
             record_flag = true
 
-            print(tostring(test_record["_attr"]["ssh"]) .. "(VS)" .. tostring(cur_packet_data["ssh_protocol"]))
+
 
             if tostring(test_record["_attr"]["ssh"]) == tostring(cur_packet_data["ssh_protocol"]) then
                 --elem["info"]["weight"] = tonumber(test_record["_attr"]["weight"])
@@ -96,18 +93,16 @@ function osfinger_ssh_dissector.osfinger_ssh_match(cur_packet_data)
                 table.insert(ssh_protocol_names, elem["info"])
                 --total_record_weight = total_record_weight + tonumber(elem["tests"]["_attr"]["weight"])
                 --return {ssh_protocol_names[1], total_record_weight, 1}   -- Since it's an exact match
-                print(inspect(ssh_protocol_names[1]))
+
                 return ssh_protocol_names[1]
             end
         end
     end
 
-    print("Responses (After exact matches (SSH)) = " .. tostring(inspect(ssh_protocol_names)))
-
     -- SSH partial list traversal (if we need to)
     for _, elem in ipairs(osfinger_ssh_partial_list) do
         record_flag = false
-        --print("Current partial element = " .. tostring(inspect(elem)))
+
 
         for _, test_record in ipairs(elem["tests"]) do
             record_flag = true
@@ -136,15 +131,10 @@ function osfinger_ssh_dissector.osfinger_ssh_match(cur_packet_data)
         end
     end
 
-    print("Responses (After partial matches (SSH)) = " .. tostring(inspect(ssh_protocol_names)))
-
     if total_record_weight > 0 then
         -- table.sort(ssh_protocol_names, function(r1, r2)
         --     return r1["weight"] > r2["weight"]
         -- end)
-
-        -- print(inspect(ssh_protocol_names))
-
         --return {ssh_protocol_names[1], total_record_weight, total_matches}
         return ssh_protocol_names[1]
     else
@@ -184,8 +174,6 @@ function cgs_ssh_proto.dissector(buffer, pinfo, tree)
             -- with the current address and port info:
 
             osfinger.ssh_stream_table[cur_stream_id] = {}
-            print("New SSH stream ID detected: " .. cur_stream_id)
-            print("Address pair: [" .. tostring(ip_src) .. ":" .. tostring(tcp_src) .. ", " .. tostring(ip_dst) .. ":" .. tostring(tcp_dst) .. "]")
 
             -- Fill the current entry in the SSH stream table
             osfinger.ssh_stream_table[cur_stream_id]["ip_pair"] = {
@@ -198,8 +186,6 @@ function cgs_ssh_proto.dissector(buffer, pinfo, tree)
                 dst_port = tostring(tcp_dst)
             }
 
-            print(inspect(osfinger.ssh_stream_table[cur_stream_id]))
-
             -- After that, the next step is to build
             -- our signature (in p0f format) and compare it
             -- against the entries we have inside Satori's
@@ -210,15 +196,12 @@ function cgs_ssh_proto.dissector(buffer, pinfo, tree)
                 -- Other options will be added later if they exist in the current packet
             }
 
-            print(inspect(temp_ssh_sig) .. "\n")
-
             -- Let's check what we got back
             ssh_os_data = osfinger_ssh_dissector.osfinger_ssh_match(temp_ssh_sig)
-            --print("Do we have SSH data?: " .. tostring(ssh_os_data ~= nil))
+
             if ssh_os_data ~= nil then
                 -- Store the result in the current stream record
                 osfinger.ssh_stream_table[cur_stream_id]["os_data"] = ssh_os_data
-                --print(inspect(osfinger.ssh_stream_table[cur_stream_id]["os_data"]))
             end
             -- (...)
         else

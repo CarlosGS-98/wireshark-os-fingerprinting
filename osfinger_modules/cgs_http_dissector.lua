@@ -82,14 +82,14 @@ function osfinger_http_dissector.osfinger_http_webserver_match(cur_packet_data)
     local total_matches = 0
     local record_flag = false
 
-    print("Wir suchen gerade innerhalb beider Web-Server Listen...")
+
 
     --- HTTP Web Server ---
 
     --- HTTP User Agent ---
     -- HTTP exact list traversal
     for index, elem in ipairs(osfinger_http_server_exact_list) do
-        print("Analizing exact user matches... (" .. tostring(index) .. ")")
+
         record_flag = false
 
         
@@ -119,19 +119,16 @@ function osfinger_http_dissector.osfinger_http_webserver_match(cur_packet_data)
         end
     end
 
-    print("Responses (After exact matches (Web Server)) = " .. tostring(inspect(http_webserver_names)))
+
 
     -- DNS partial list traversal (if we need to)
     for _, elem in ipairs(osfinger_http_server_partial_list) do
         record_flag = false
 
-        --print("Record flag = " .. tostring(record_flag))
-        --print("Current partial element = " .. tostring(inspect(elem)))
+
+
         for _, test_record in ipairs(elem["tests"]) do
             record_flag = true
-            print(test_record["_attr"]["webserver"])
-            print(tostring(test_record["_attr"]["webserver"]) .. " (VS) " .. tostring(cur_packet_data["web_server"]))
-            print(tostring(string.match(tostring(cur_packet_data["web_server"]), tostring(test_record["_attr"]["webserver"])) ~= nil))
 
             if string.match(tostring(cur_packet_data["web_server"]), tostring(test_record["_attr"]["webserver"])) ~= nil then
             --if tostring(test_record["_attr"]["webserver"]) == cur_packet_data["user_agent"] then
@@ -142,7 +139,7 @@ function osfinger_http_dissector.osfinger_http_webserver_match(cur_packet_data)
             end
         end
 
-        --print("Haben wir das Vorherige überlebt?")
+
         if not record_flag then
             -- We have to use this as a fallback
             -- until we discover why our previous
@@ -158,15 +155,12 @@ function osfinger_http_dissector.osfinger_http_webserver_match(cur_packet_data)
         end
     end
 
-    print("Responses (After partial matches (Web Server)) = " .. tostring(inspect(http_webserver_names)))
+
 
     if total_record_weight > 0 then
         -- table.sort(http_webserver_names, function(r1, r2)
         --     return r1["weight"] > r2["weight"]
         -- end)
-
-        -- print(inspect(http_webserver_names))
-
         --return {http_webserver_names[1], total_record_weight, total_matches}
         return http_webserver_names[1]
     else
@@ -194,7 +188,6 @@ function osfinger_http_dissector.osfinger_http_useragent_match(cur_packet_data)
     local record_flag = false
 
     --- HTTP Web Server ---
-    print("Wir suchen gerade innerhalb beider Benutzeragentenlisten...")
 
     --- HTTP User Agent ---
     -- HTTP exact list traversal
@@ -226,18 +219,13 @@ function osfinger_http_dissector.osfinger_http_useragent_match(cur_packet_data)
         end
     end
 
-    print("Responses (After exact matches (User Agent)) = " .. tostring(inspect(http_useragent_names)))
-
     -- HTTP partial list traversal (if we need to)
     for _, elem in ipairs(osfinger_http_agent_partial_list) do
         record_flag = false
-        --print("Record flag = " .. tostring(record_flag))
-        --print("Current partial element = " .. tostring(inspect(elem)))
+
+
         for _, test_record in ipairs(elem["tests"]) do
             record_flag = true
-            print(test_record["_attr"]["webuseragent"])
-            print(tostring(test_record["_attr"]["webuseragent"]) .. " (VS) " .. tostring(cur_packet_data["user_agent"]))
-            print(tostring(string.match(tostring(cur_packet_data["user_agent"]), tostring(test_record["_attr"]["webuseragent"]))) ~= nil)
 
             if string.match(tostring(cur_packet_data["user_agent"]), tostring(test_record["_attr"]["webuseragent"])) ~= nil then
             --if tostring(test_record["_attr"]["webuseragent"]) == cur_packet_data["user_agent"] then
@@ -248,7 +236,6 @@ function osfinger_http_dissector.osfinger_http_useragent_match(cur_packet_data)
             end
         end
 
-        --print("Haben wir das Vorherige überlebt?")
         if not record_flag then
             -- We have to use this as a fallback
             -- until we discover why our previous
@@ -264,15 +251,10 @@ function osfinger_http_dissector.osfinger_http_useragent_match(cur_packet_data)
         end
     end
 
-    print("Responses (After partial matches (User Agent)) = " .. tostring(inspect(http_useragent_names)))
-
     if total_record_weight > 0 then
         -- table.sort(http_useragent_names, function(r1, r2)
         --     return r1["weight"] > r2["weight"]
         -- end)
-
-        -- print(inspect(http_useragent_names))
-
         --return {http_useragent_names[1], total_record_weight, total_matches}
         return http_useragent_names[1]
     else
@@ -297,9 +279,6 @@ function cgs_http_proto.dissector(buffer, pinfo, tree)
     if http_check ~= nil and ip_src ~= nil and ip_dst ~= nil then
         local http_tree = tree:add(cgs_http_proto, "OS Fingerprinting through HTTP")
         local http_os_data = {}
-
-        -- print("Web Server = " .. tostring(http_server.value or nil))
-        -- print("User Agent = " .. tostring(http_agent.value or nil))
         local http_webserver_data = nil
         local http_useragent_data = nil
 
@@ -313,8 +292,6 @@ function cgs_http_proto.dissector(buffer, pinfo, tree)
                 -- with the current address and port info:
 
                 osfinger.http_stream_table[cur_stream_id] = {}
-                print("New HTTP stream ID detected: " .. cur_stream_id)
-                print("Address pair: [" .. tostring(ip_src) .. ":" .. tostring(tcp_src) .. ", " .. tostring(ip_dst) .. ":" .. tostring(tcp_dst) .. "]")
 
                 -- Fill the current entry in the HTTP stream table
                 osfinger.http_stream_table[cur_stream_id]["ip_pair"] = {
@@ -327,15 +304,10 @@ function cgs_http_proto.dissector(buffer, pinfo, tree)
                     dst_port = tostring(tcp_dst)
                 }
 
-                print(inspect(osfinger.http_stream_table[cur_stream_id]))
-
                 -- After that, the next step is to build
                 -- our ad-hoc and compare it
                 -- against the entries we have inside Satori's
                 -- fingerprint database:
-
-                print(tostring(http_server ~= nil))
-                print(tostring(http_agent ~= nil))
 
                 if http_server ~= nil then
                     temp_http_sig["web_server"] = http_server.value
@@ -345,14 +317,12 @@ function cgs_http_proto.dissector(buffer, pinfo, tree)
                     temp_http_sig["user_agent"] = http_agent.value
                 end
 
-                print(inspect(temp_http_sig) .. "\n")
-
                 -- Check whether we have a web server match
                 if temp_http_sig["web_server"] ~= nil then
                     http_webserver_data = osfinger_http_dissector.osfinger_http_webserver_match(temp_http_sig)
-                    print("Do we have web server data?: " .. tostring(http_webserver_data ~= nil))
+
                     if http_webserver_data ~= nil then
-                        print("Webserver Data = " .. tostring(inspect(http_webserver_data)) .. "\n")
+
                         osfinger.http_stream_table[cur_stream_id]["http_server_data"] = http_webserver_data
                     end
                 end
@@ -360,14 +330,13 @@ function cgs_http_proto.dissector(buffer, pinfo, tree)
                 -- Check whether we have a web user agent match
                 if temp_http_sig["user_agent"] ~= nil then
                     http_useragent_data = osfinger_http_dissector.osfinger_http_useragent_match(temp_http_sig)
-                    print("Do we have user agent data?: " .. tostring(http_useragent_data ~= nil))
+
                     if http_useragent_data ~= nil then
-                        print("User Agent Data = " .. tostring(inspect(http_useragent_data)) .. "\n")
+
                         osfinger.http_stream_table[cur_stream_id]["http_agent_data"] = http_useragent_data
                     end
                 end
 
-                print(inspect(osfinger.http_stream_table[cur_stream_id]))
             else
                 -- If we get here, we just assume that
                 -- this packet belongs to a previous stream:
@@ -393,8 +362,6 @@ function cgs_http_proto.dissector(buffer, pinfo, tree)
         local packet_device_vendor = "Unknown"
         local packet_web_server_name = "Unknown"
         local packet_user_agent_name = "Unknown"
-
-        --print("Current OS Data = " .. inspect(tcp_os_data))
 
         if (http_useragent_data ~= nil and tostring(http_useragent_data["name"]) ~= "") then
             packet_full_name = http_useragent_data["name"]
@@ -458,8 +425,6 @@ function cgs_http_proto.dissector(buffer, pinfo, tree)
         if (http_useragent_data ~= nil and tostring(http_useragent_data["webuseragent"]) ~= "") then
             packet_user_agent_name = http_useragent_data["webuseragent"]
         end
-
-        --print("Current HTTP Info: (" .. packet_full_name .. " (" .. packet_os_name .. "), " .. packet_os_class .. "; " .. packet_os_vendor .. "; " .. packet_device_type .. " (by " .. packet_device_vendor .. ")); " .. packet_web_server_name .. "; " .. packet_user_agent_name)
 
         http_tree:add(osfinger_http_full_name_F, tostring(packet_full_name))
         http_tree:add(osfinger_http_os_name_F, tostring(packet_os_name))
