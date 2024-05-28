@@ -3,6 +3,7 @@
 --
 -- author: Carlos González Sanz <cgonzalezsanz98@gmail.com>
 -- Copyleft (ɔ) 2023 - 2024, Carlos González Sanz
+-- Copyleft (ɔ) 2023 - 2024, Carlos González Sanz
 --
 ----------------------------------------
 
@@ -24,7 +25,7 @@ local cgs_ssl_proto = Proto(CGS_OS_SSL_PROTO, "OS Fingerprinting - SSL")
 --- Fields for this SSL postdissector ---
 local osfinger_ssl_ja3_signature = Field.new("tls.handshake.ja3")
 local osfinger_ssl_ja3s_signature = Field.new("tls.handshake.ja3s")
-local osfinger_ssl_ja4_signature = Field.new("tls.handshake.ja4")
+--local osfinger_ssl_ja4_signature = Field.new("tls.handshake.ja4") -- Uncomment this line if you're using Wireshark 4.x+
 
 -- Fields for the SSL dissection tree
 local osfinger_ssl_full_name_F = ProtoField.string(CGS_OS_SSL_PROTO .. ".full_name", "Device/OS Full Name", "Can include version info about the given OS if it's one")  
@@ -48,98 +49,80 @@ local osfinger_ssl_xml = osfinger.preloadXML(OSFINGER_SATORI_SSL)["SSL"]
 local osfinger_ssl_exact_list, osfinger_ssl_partial_list = osfinger.signature_partition(osfinger_ssl_xml, "SSL", "ssl_tests")
 
 --- Extra functions for this SSL postdissector ---
--- function osfinger_ssl_dissector.osfinger_ssl_match(cur_packet_data)
---     local ssl_sslserver_names = {}
+function osfinger_ssl_dissector.osfinger_ssl_match(cur_packet_data)
+    local ssl_signature_names = {}
 
---     -- Because the signature info Satori provides us for SSL
---     -- only contains server names in "ssl.xml",
---     -- we must search both lists in order to find a given SSL server match.
---     --
---     -- If we end up traversing the entire exact list
---     -- without finding any match, then we should look up
---     -- the partial list so as to try to find a match,
---     -- which will have percentage data based on the weight
---     -- of the current match as well as the number of records
---     -- we retrieve from that list.
+    -- Because the signature info Satori provides us for SSL
+    -- only contains server names in "ssl.xml",
+    -- we must search both lists in order to find a given SSL server match.
+    --
+    -- If we end up traversing the entire exact list
+    -- without finding any match, then we should look up
+    -- the partial list so as to try to find a match,
+    -- which will have percentage data based on the weight
+    -- of the current match as well as the number of records
+    -- we retrieve from that list.
 
---     local total_record_weight = 0
---     local total_matches = 0
---     local record_flag = false
+    local total_record_weight = 0
+    local record_flag = false
 
---     --- SSL Server ---
---     -- SSL exact list traversal
---     for index, elem in ipairs(osfinger_ssl_exact_list) do
---         record_flag = false
---         for _, test_record in ipairs(elem["tests"]) do
---             record_flag = true
+    --- SSL Signatures ---
+    -- SSL exact list traversal
+    for index, elem in ipairs(osfinger_ssl_exact_list) do
+        record_flag = false
+        for _, test_record in ipairs(elem["tests"]) do
+            record_flag = true
 
---             if tostring(test_record["_attr"]["sslserver"]) == tostring(cur_packet_data["ssl_server"]) then
---                 elem["info"]["weight"] = tonumber(test_record["_attr"]["weight"])
---                 table.insert(ssl_sslserver_names, elem["info"])
---                 total_record_weight = total_record_weight + tonumber(elem["tests"]["_attr"]["weight"])
---                 return {ssl_sslserver_names[1], total_record_weight, 1}   -- Since it's an exact match
---             end
---         end
+            if tostring(test_record["_attr"]["sslsig"]) == tostring(cur_packet_data["ja3_sig"]) then
+                --elem["info"]["weight"] = tonumber(test_record["_attr"]["weight"])
+                table.insert(ssl_signature_names, elem["info"])
+                --total_record_weight = total_record_weight + tonumber(elem["tests"]["_attr"]["weight"])
+                --return {ssl_signature_names[1], total_record_weight, 1}   -- Since it's an exact match
+                return ssl_signature_names[1]
 
---         if not record_flag then
---             -- We have to use this as a fallback
---             -- until we discover why our previous
---             -- iterator gives up when the current
---             -- record only contains a single test:
+            elseif tostring(test_record["_attr"]["sslsig"]) == tostring(cur_packet_data["ja3s_sig"]) then
+                --elem["info"]["weight"] = tonumber(test_record["_attr"]["weight"])
+                table.insert(ssl_signature_names, elem["info"])
+                --total_record_weight = total_record_weight + tonumber(elem["tests"]["_attr"]["weight"])
+                --return {ssl_signature_names[1], total_record_weight, 1}   -- Since it's an exact match
+                return ssl_signature_names[1]
+            end
+        end
 
---             if tostring(elem["tests"]["_attr"]["sslserver"]) == tostring(cur_packet_data["ssl_server"]) then
---                 elem["info"]["weight"] = tonumber(elem["tests"]["_attr"]["weight"])
---                 table.insert(ssl_sslserver_names, elem["info"])
---                 total_record_weight = total_record_weight + tonumber(elem["tests"]["_attr"]["weight"])
---                 return {ssl_sslserver_names[1], total_record_weight, 1}   -- Since it's an exact match
---             end
---         end
---     end
+        if not record_flag then
+            -- We have to use this as a fallback
+            -- until we discover why our previous
+            -- iterator gives up when the current
+            -- record only contains a single test:
 
---     -- SSL partial list traversal (if we need to)
---     for _, elem in ipairs(osfinger_ssl_partial_list) do
---         record_flag = false
---         --print("Current partial element = " .. tostring(inspect(elem)))
---         for _, test_record in ipairs(elem["tests"]) do
---             record_flag = true
+            if tostring(elem["tests"]["_attr"]["sslsig"]) == tostring(cur_packet_data["ja3_sig"]) then
+                elem["info"]["weight"] = tonumber(elem["tests"]["_attr"]["weight"])
+                table.insert(ssl_signature_names, elem["info"])
+                total_record_weight = total_record_weight + tonumber(elem["tests"]["_attr"]["weight"])
+                --return {ssl_signature_names[1], total_record_weight, 1}   -- Since it's an exact match
+                return ssl_signature_names[1]
 
---             if string.match(tostring(cur_packet_data["ssl_server"]), tostring(test_record["_attr"]["sslserver"])) ~= nil then
---             --if tostring(test_record["_attr"]["sslserver"]) == cur_packet_data["user_agent"] then
---                 elem["info"]["weight"] = tonumber(test_record["_attr"]["weight"])
---                 table.insert(ssl_sslserver_names, elem["info"])
---                 total_record_weight = total_record_weight + tonumber(test_record["_attr"]["weight"])
---                 total_matches = total_matches + 1
---             end
---         end
+            elseif tostring(elem["tests"]["_attr"]["sslsig"]) == tostring(cur_packet_data["ja3s_sig"]) then
+                elem["info"]["weight"] = tonumber(elem["tests"]["_attr"]["weight"])
+                table.insert(ssl_signature_names, elem["info"])
+                total_record_weight = total_record_weight + tonumber(elem["tests"]["_attr"]["weight"])
+                --return {ssl_signature_names[1], total_record_weight, 1}   -- Since it's an exact match
+                return ssl_signature_names[1]
+            end
+        end
+    end
 
---         if not record_flag then
---             -- We have to use this as a fallback
---             -- until we discover why our previous
---             -- iterator gives up when the current
---             -- record only contains a single test:
+    -- if total_record_weight > 0 then
+    --     -- table.sort(ssl_signature_names, function(r1, r2)
+    --     --     return r1["weight"] > r2["weight"]
+    --     -- end)
 
---             if string.match(cur_packet_data["ssl_server"], tostring(elem["tests"]["_attr"]["sslserver"])) ~= nil then
---                 elem["info"]["weight"] = tonumber(elem["tests"]["_attr"]["weight"])
---                 table.insert(ssl_sslserver_names, elem["info"])
---                 total_record_weight = total_record_weight + tonumber(elem["tests"]["_attr"]["weight"])
---                 total_matches = total_matches + 1
---             end
---         end
---     end
-
---     if total_record_weight > 0 then
---         -- table.sort(ssl_sslserver_names, function(r1, r2)
---         --     return r1["weight"] > r2["weight"]
---         -- end)
-
---         -- print(inspect(ssl_sslserver_names))
-
---         --return {ssl_sslserver_names[1], total_record_weight, total_matches}
---         return ssl_sslserver_names[1]
---     else
---         return nil
---     end
--- end
+    --     --return {ssl_signature_names[1], total_record_weight, total_matches}
+    --     return ssl_signature_names[1]
+    -- else
+    --     return nil
+    -- end
+end
 
 function cgs_ssl_proto.dissector(buffer, pinfo, tree)
     -- Looking at Wireshark's documentation,
@@ -155,17 +138,17 @@ function cgs_ssl_proto.dissector(buffer, pinfo, tree)
 
     local ssl_ja3_signature = osfinger_ssl_ja3_signature()
     local ssl_ja3s_signature = osfinger_ssl_ja3s_signature()
-    local ssl_ja4_signature = osfinger_ssl_ja4_signature()
+    --local ssl_ja4_signature = osfinger_ssl_ja4_signature()
 
     if ip_src ~= nil
     and ip_dst ~= nil
     and tcp_src ~= nil
     and tcp_dst ~= nil
     and (ssl_ja3_signature ~= nil
-        or ssl_ja3s_signature ~= nil
-        or ssl_ja4_signature ~= nil) then
+        or ssl_ja3s_signature ~= nil) then
+        --or ssl_ja4_signature ~= nil) then
         
-        local ssl_tree = tree:add(cgs_ssl_proto, "OS Fingerprinting through SSL")
+        local ssl_tree = tree:add(cgs_ssl_proto, "OS Fingerprinting through TLS/SSL")
         local ssl_os_data = {}
 
         -- We first calculate the stream ID based on the current addresses and ports
@@ -177,8 +160,6 @@ function cgs_ssl_proto.dissector(buffer, pinfo, tree)
             -- with the current address and port info:
 
             osfinger.ssl_stream_table[cur_stream_id] = {}
-            print("New SSL stream ID detected: " .. cur_stream_id)
-            print("Address pair: [" .. tostring(ip_src) .. ":" .. tostring(tcp_src) .. ", " .. tostring(ip_dst) .. ":" .. tostring(tcp_dst) .. "]")
 
             -- Fill the current entry in the DNS stream table
             osfinger.ssl_stream_table[cur_stream_id]["ip_pair"] = {
@@ -191,8 +172,6 @@ function cgs_ssl_proto.dissector(buffer, pinfo, tree)
                 dst_port = tostring(tcp_dst)
             }
 
-            print(inspect(osfinger.ssl_stream_table[cur_stream_id]))
-
             -- After that, the next step is to build
             -- our signature (in p0f format) and compare it
             -- against the entries we have inside Satori's
@@ -201,102 +180,67 @@ function cgs_ssl_proto.dissector(buffer, pinfo, tree)
             temp_ssl_sig = {
                 ja3_sig = tostring(ssl_ja3_signature.value) or SSL_NO_NAME,
                 ja3s_sig = tostring(ssl_ja3s_signature.value) or SSL_NO_NAME,
-                ja4_sig = tostring(ssl_ja4_signature.value) or SSL_NO_NAME,
+                --ja4_sig = tostring(ssl_ja4_signature.value) or SSL_NO_NAME,
                 -- Other options will be added later if they exist in the current packet
             }
 
-            print(inspect(temp_ssl_sig) .. "\n")
+            -- Let's check what we got back
+            ssl_os_data = osfinger_ssl_dissector.osfinger_ssl_match(temp_ssl_sig)
 
-            -- -- Let's check what we got back
-            -- ssl_os_data = osfinger_ssl_dissector.osfinger_ssl_match(temp_ssl_sig)
-            -- print("Do we have SSL data?: " .. tostring(ssl_os_data ~= nil))
-            -- if ssl_os_data ~= nil then
-            --     -- Store the result in the current stream record
-            --     osfinger.ssl_stream_table[cur_stream_id]["os_data"] = ssl_os_data
-            --     print(inspect(osfinger.ssl_stream_table[cur_stream_id]["os_data"]))
-            -- end
+            if ssl_os_data ~= nil then
+                -- Store the result in the current stream record
+                osfinger.ssl_stream_table[cur_stream_id]["os_data"] = ssl_os_data
+            end
             -- (...)
         else
             -- If we get here, we just assume that
             -- this packet belongs to a previous stream:
 
-            --- [TODO]: Fetch SSL signature info for the current packet ---
-            -- if osfinger.ssl_stream_table[cur_stream_id]["os_data"] ~= nil then
-            --     ssl_os_data = osfinger.ssl_stream_table[cur_stream_id]["os_data"]
-            -- end
+            if osfinger.ssl_stream_table[cur_stream_id]["os_data"] ~= nil then
+                ssl_os_data = osfinger.ssl_stream_table[cur_stream_id]["os_data"]
+            end
         end
 
         -- After all those checks, we finally display
         -- all the relevant info from our current packet:
 
-        -- local ssl_subtree = ssl_tree:add(
-        --     "Best of " .. tostring(ssl_os_data[3]) .. " matches" .. " (" .. string.format("%.2f", tostring((tonumber(ssl_os_data["weight"]) / tonumber(ssl_os_data[2])) * 100)) .. " %)"
-        -- )
+        local packet_full_name = "Unknown"
+        local packet_os_name = "Unknown"
+        local packet_os_class = "Unknown"
+        local packet_os_vendor = "Unknown"
+        local packet_device_type = "Unknown"
+        local packet_device_vendor = "Unknown"
 
-        -- local packet_full_name = "Unknown"
-        -- local packet_os_name = "Unknown"
-        -- local packet_os_class = "Unknown"
-        -- local packet_os_vendor = "Unknown"
-        -- local packet_device_type = "Unknown"
-        -- local packet_device_vendor = "Unknown"
+        if (ssl_os_data ~= nil and (ssl_os_data["name"]) ~= "") then
+            packet_full_name = ssl_os_data["name"]
+        end
 
-        -- if (ssl_os_data ~= nil and (ssl_os_data["name"]) ~= "") then
-        --     packet_full_name = ssl_os_data["name"]
-        -- end
+        if (ssl_os_data ~= nil and (ssl_os_data["os_name"]) ~= "") then
+            packet_os_name = ssl_os_data["os_name"]
+        end
 
-        -- if (ssl_os_data ~= nil and (ssl_os_data["os_name"]) ~= "") then
-        --     packet_os_name = ssl_os_data["os_name"]
-        -- end
+        if (ssl_os_data ~= nil and (ssl_os_data["os_class"]) ~= "") then
+            packet_os_class = ssl_os_data["os_class"]
+        end
 
-        -- if (ssl_os_data ~= nil and (ssl_os_data["os_class"]) ~= "") then
-        --     packet_os_class = ssl_os_data["os_class"]
-        -- end
+        if (ssl_os_data ~= nil and (ssl_os_data["os_vendor"]) ~= "") then
+            packet_os_vendor = ssl_os_data["os_vendor"]
+        end
 
-        -- if (ssl_os_data ~= nil and (ssl_os_data["os_vendor"]) ~= "") then
-        --     packet_os_vendor = ssl_os_data["os_vendor"]
-        -- end
+        if (ssl_os_data ~= nil and (ssl_os_data["device_type"]) ~= "") then
+            packet_device_type = ssl_os_data["device_type"]
+        end
 
-        -- if (ssl_os_data ~= nil and (ssl_os_data["device_type"]) ~= "") then
-        --     packet_device_type = ssl_os_data["device_type"]
-        -- end
+        if (ssl_os_data ~= nil and (ssl_os_data["device_vendor"]) ~= "") then
+            packet_device_vendor = ssl_os_data["device_vendor"]
+        end
 
-        -- if (ssl_os_data ~= nil and (ssl_os_data["device_vendor"]) ~= "") then
-        --     packet_device_vendor = ssl_os_data["device_vendor"]
-        -- end
-
-        -- --print("Current Info: (" .. packet_full_name .. " (" .. packet_os_name .. "), " .. packet_os_class .. "; " .. packet_os_vendor .. "; " .. packet_device_type .. " (by " .. packet_device_vendor .. "))")
-
-        -- print("Before tree assignment (SSL): " .. tostring(inspect(
-        --     {
-        --         packet_full_name,
-        --         packet_os_name,
-        --         packet_os_class,
-        --         packet_os_vendor,
-        --         packet_device_type,
-        --         packet_device_vendor,
-        --     }
-        -- )))
-
-        -- ssl_tree:add(osfinger_ssl_full_name_F, tostring(packet_full_name))
-        -- ssl_tree:add(osfinger_ssl_os_name_F, tostring(packet_os_name))
-        -- ssl_tree:add(osfinger_ssl_os_class_F, tostring(packet_os_class))
-        -- ssl_tree:add(osfinger_ssl_os_vendor_F, tostring(packet_os_vendor))
-        -- ssl_tree:add(osfinger_ssl_device_type_F, tostring(packet_device_type))
-        -- ssl_tree:add(osfinger_ssl_device_vendor_F, tostring(packet_device_vendor))
-
-        -- print("After tree assignment (SSL): " .. tostring(inspect(
-        --     {
-        --         packet_full_name,
-        --         packet_os_name,
-        --         packet_os_class,
-        --         packet_os_vendor,
-        --         packet_device_type,
-        --         packet_device_vendor,
-        --     }
-        -- )))
-        --print(inspect(ssl_tree))
-
-        --ssl_tree:add(osfinger_ssl_record_tree_F, ssl_subtree)
+        ssl_tree:add(osfinger_ssl_full_name_F, tostring(packet_full_name))
+        ssl_tree:add(osfinger_ssl_os_name_F, tostring(packet_os_name))
+        ssl_tree:add(osfinger_ssl_os_class_F, tostring(packet_os_class))
+        ssl_tree:add(osfinger_ssl_os_vendor_F, tostring(packet_os_vendor))
+        ssl_tree:add(osfinger_ssl_device_type_F, tostring(packet_device_type))
+        ssl_tree:add(osfinger_ssl_device_vendor_F, tostring(packet_device_vendor))
     end
 
     osfinger_ssl_dissector.ssl_stream_table = osfinger.ssl_stream_table

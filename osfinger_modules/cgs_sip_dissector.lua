@@ -99,7 +99,7 @@ function osfinger_sip_dissector.osfinger_sip_match(cur_packet_data)
     -- SIP partial list traversal (if we need to)
     for _, elem in ipairs(osfinger_sip_partial_list) do
         record_flag = false
-        --print("Current partial element = " .. tostring(inspect(elem)))
+
         for _, test_record in ipairs(elem["tests"]) do
             record_flag = true
 
@@ -131,9 +131,6 @@ function osfinger_sip_dissector.osfinger_sip_match(cur_packet_data)
         -- table.sort(sip_sipserver_names, function(r1, r2)
         --     return r1["weight"] > r2["weight"]
         -- end)
-
-        -- print(inspect(sip_sipserver_names))
-
         --return {sip_sipserver_names[1], total_record_weight, total_matches}
         return sip_sipserver_names[1]
     else
@@ -182,8 +179,6 @@ function cgs_sip_proto.dissector(buffer, pinfo, tree)
             -- with the current address and port info:
 
             osfinger.sip_stream_table[cur_stream_id] = {}
-            print("New SIP stream ID detected: " .. cur_stream_id)
-            print("Address pair: [" .. tostring(ip_src) .. ":" .. tostring(cur_src_port) .. ", " .. tostring(ip_dst) .. ":" .. tostring(cur_dst_port) .. "]")
 
             -- Fill the current entry in the DNS stream table
             osfinger.sip_stream_table[cur_stream_id]["ip_pair"] = {
@@ -196,8 +191,6 @@ function cgs_sip_proto.dissector(buffer, pinfo, tree)
                 dst_port = tostring(cur_dst_port)
             }
 
-            print(inspect(osfinger.sip_stream_table[cur_stream_id]))
-
             -- After that, the next step is to build
             -- our signature (in p0f format) and compare it
             -- against the entries we have inside Satori's
@@ -208,15 +201,12 @@ function cgs_sip_proto.dissector(buffer, pinfo, tree)
                 -- Other options will be added later if they exist in the current packet
             }
 
-            print(inspect(temp_sip_sig) .. "\n")
-
             -- Let's check what we got back
             sip_os_data = osfinger_sip_dissector.osfinger_sip_match(temp_sip_sig)
-            print("Do we have SIP data?: " .. tostring(sip_os_data ~= nil))
+
             if sip_os_data ~= nil then
                 -- Store the result in the current stream record
                 osfinger.sip_stream_table[cur_stream_id]["os_data"] = sip_os_data
-                print(inspect(osfinger.sip_stream_table[cur_stream_id]["os_data"]))
             end
             -- (...)
         else
@@ -231,10 +221,6 @@ function cgs_sip_proto.dissector(buffer, pinfo, tree)
 
         -- After all those checks, we finally display
         -- all the relevant info from our current packet:
-
-        -- local sip_subtree = sip_tree:add(
-        --     "Best of " .. tostring(sip_os_data[3]) .. " matches" .. " (" .. string.format("%.2f", tostring((tonumber(sip_os_data["weight"]) / tonumber(sip_os_data[2])) * 100)) .. " %)"
-        -- )
 
         local packet_full_name = "Unknown"
         local packet_os_name = "Unknown"
@@ -267,37 +253,12 @@ function cgs_sip_proto.dissector(buffer, pinfo, tree)
             packet_device_vendor = sip_os_data["device_vendor"]
         end
 
-        --print("Current Info: (" .. packet_full_name .. " (" .. packet_os_name .. "), " .. packet_os_class .. "; " .. packet_os_vendor .. "; " .. packet_device_type .. " (by " .. packet_device_vendor .. "))")
-
-        print("Before tree assignment (SIP): " .. tostring(inspect(
-            {
-                packet_full_name,
-                packet_os_name,
-                packet_os_class,
-                packet_os_vendor,
-                packet_device_type,
-                packet_device_vendor,
-            }
-        )))
-
         sip_tree:add(osfinger_sip_full_name_F, tostring(packet_full_name))
         sip_tree:add(osfinger_sip_os_name_F, tostring(packet_os_name))
         sip_tree:add(osfinger_sip_os_class_F, tostring(packet_os_class))
         sip_tree:add(osfinger_sip_os_vendor_F, tostring(packet_os_vendor))
         sip_tree:add(osfinger_sip_device_type_F, tostring(packet_device_type))
         sip_tree:add(osfinger_sip_device_vendor_F, tostring(packet_device_vendor))
-
-        print("After tree assignment (SIP): " .. tostring(inspect(
-            {
-                packet_full_name,
-                packet_os_name,
-                packet_os_class,
-                packet_os_vendor,
-                packet_device_type,
-                packet_device_vendor,
-            }
-        )))
-        --print(inspect(sip_tree))
 
         --sip_tree:add(osfinger_sip_record_tree_F, sip_subtree)
     end

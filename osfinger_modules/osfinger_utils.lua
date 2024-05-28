@@ -27,6 +27,7 @@ OSFINGER_SATORI_HTTP_AGENT = CGS_OS_PLUGIN_MODULES_DIR .. "webuseragent.xml"
 OSFINGER_SATORI_NTP = CGS_OS_PLUGIN_MODULES_DIR .. "ntp.xml"
 OSFINGER_SATORI_SIP = CGS_OS_PLUGIN_MODULES_DIR .. "sip.xml"
 OSFINGER_SATORI_SMB = CGS_OS_PLUGIN_MODULES_DIR .. "smb.xml"
+OSFINGER_SATORI_SSH = CGS_OS_PLUGIN_MODULES_DIR .. "ssh.xml"
 OSFINGER_SATORI_SSL = CGS_OS_PLUGIN_MODULES_DIR .. "ssl.xml"
 OSFINGER_SATORI_TCP = CGS_OS_PLUGIN_MODULES_DIR .. "tcp.xml"
 
@@ -110,7 +111,20 @@ osfinger_utils.smb_stream_table = {
     ]]--
 }
 
---. SSL stream lookup table
+--. SSH stream lookup table
+osfinger_utils.ssh_stream_table = {
+    --[[
+        Each entry in this table will have the following format:
+
+        <stream_string_id> = {
+            ip_pair = {src_ip = SRC_IP, dst_ip = DST_IP},
+            port_pair = {src_port = SRC_PORT, dst_port = DST_PORT},
+            ssh_os_data = {server = SERVER, user_agent = USER_AGENT}
+        }, (...)
+    ]]--
+}
+
+--. TLS/SSL stream lookup table
 osfinger_utils.ssl_stream_table = {
     --[[
         Each entry in this table will have the following format:
